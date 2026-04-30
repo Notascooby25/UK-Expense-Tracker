@@ -1,0 +1,18 @@
+# Git metadata and CI
+.git
+.github/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local secrets and runtime data
+.streamlit/secrets.toml
+data/
+expense_database.csv
+expense_database11111.csv
+settings.json
+saved_filters.json
+
+# Local backups
+Working back up database & APP- testing/

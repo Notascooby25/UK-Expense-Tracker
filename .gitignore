@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.venv/
+venv/
+
+# Streamlit local files
+.streamlit/secrets.toml
+.streamlit/New Document.txt
+
+# Local runtime data (personal)
+data/**
+!data/.gitkeep
+expense_database*.csv
+settings*.json
+saved_filters*.json
+
+# Backups / local scratch
+.history/
+Working back up database & APP- testing/
+
+# Editor/OS
+.DS_Store
+.vscode/
+
+# Keep template/example files
+!*.example.csv
+!*.example.json
+!.streamlit/secrets.toml.example
