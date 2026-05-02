@@ -1,0 +1,15 @@
+services:
+  expense-tracker:
+    image: ghcr.io/notascooby25/uk-expense-tracker:latest
+    container_name: uk_expense_tracker
+    ports:
+      - "8501:8501"
+    environment:
+      - EXPENSE_TRACKER_DATA_DIR=/app/data
+      - EXPENSE_TRACKER_ENV=production
+    volumes:
+      - ./data:/app/data
+      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    restart: unless-stopped

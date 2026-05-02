@@ -48,35 +48,6 @@ DB_EXAMPLE_FILE = os.path.join(BASE_DIR, "expense_database.example.csv")
 SETTINGS_EXAMPLE_FILE = os.path.join(BASE_DIR, "settings.example.json")
 FILTER_EXAMPLE_FILE = os.path.join(BASE_DIR, "saved_filters.example.json")
 
-# --- Login & Authentication ---
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-
-if not st.session_state.authenticated:
-    if os.path.exists(LOGO_FILE):
-        log_col1, log_col2, log_col3 = st.columns([1, 2, 1])
-        with log_col2:
-            st.image(LOGO_FILE, use_container_width=True)
-            
-    st.title(" Secure Login")
-    valid_user, valid_pass, auth_notice = get_auth_credentials()
-    if auth_notice:
-        if REQUIRE_AUTH_SECRETS:
-            st.error(auth_notice)
-            st.stop()
-        st.warning(auth_notice)
-
-    with st.form("login_form"):
-        username = st.text_input("Username", autocomplete="username")
-        password = st.text_input("Password", type="password", autocomplete="current-password")
-        if st.form_submit_button("Login"):
-            if username == valid_user and password == valid_pass:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Incorrect username or password.")
-    st.stop()
-
 # --- Session State Initialization ---
 if 'new_sync_rows' not in st.session_state: st.session_state.new_sync_rows = pd.DataFrame(columns=COLS)
 if 'updated_sync_rows' not in st.session_state: st.session_state.updated_sync_rows = pd.DataFrame(columns=COLS)
@@ -128,6 +99,35 @@ def get_auth_credentials():
         return None, None, "Auth secrets are required in production mode. Set [auth] username/password in .streamlit/secrets.toml."
 
     return DEV_FALLBACK_USER, DEV_FALLBACK_PASS, "Development fallback auth is active because [auth] secrets are not set."
+
+# --- Login & Authentication ---
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    if os.path.exists(LOGO_FILE):
+        log_col1, log_col2, log_col3 = st.columns([1, 2, 1])
+        with log_col2:
+            st.image(LOGO_FILE, use_container_width=True)
+
+    st.title(" Secure Login")
+    valid_user, valid_pass, auth_notice = get_auth_credentials()
+    if auth_notice:
+        if REQUIRE_AUTH_SECRETS:
+            st.error(auth_notice)
+            st.stop()
+        st.warning(auth_notice)
+
+    with st.form("login_form"):
+        username = st.text_input("Username", autocomplete="username")
+        password = st.text_input("Password", type="password", autocomplete="current-password")
+        if st.form_submit_button("Login"):
+            if username == valid_user and password == valid_pass:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Incorrect username or password.")
+    st.stop()
 
 def build_startup_health():
     checks = [

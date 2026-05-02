@@ -30,6 +30,7 @@ TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 SNAPSHOT_DIR="${ROOT_DIR}/.cutover_snapshot_${TIMESTAMP}"
 
 NAS_DATA_SRC="${NAS_DATA_SRC:-}"
+CONTAINER_RUNTIME=""
 
 die()  { echo ""; echo "ABORT: $*" >&2; exit 1; }
 info() { echo "[cutover] $*"; }
@@ -50,11 +51,13 @@ echo ""
 # ── Phase 0: prerequisites ─────────────────────────────────────────────────────
 info "Phase 0: Checking prerequisites..."
 
-command -v podman >/dev/null 2>&1 \
-    || die "podman not found. Install it first: https://podman.io/getting-started/installation"
-
-command -v podman-compose >/dev/null 2>&1 \
-    || die "podman-compose not found. Install: pip install podman-compose"
+if command -v docker >/dev/null 2>&1; then
+    CONTAINER_RUNTIME="docker"
+elif command -v podman >/dev/null 2>&1; then
+    CONTAINER_RUNTIME="podman"
+else
+    die "Neither docker nor podman found. Install one container runtime first."
+fi
 
 [[ -f "${ROOT_DIR}/docker-compose.yml" ]] \
     || die "docker-compose.yml not found at ${ROOT_DIR}. Is this the right directory?"
@@ -62,10 +65,15 @@ command -v podman-compose >/dev/null 2>&1 \
 [[ -f "${ROOT_DIR}/.streamlit/secrets.toml" ]] \
     || die ".streamlit/secrets.toml missing. Copy from .streamlit/secrets.toml.example and fill in your credentials."
 
-[[ -x "${ROOT_DIR}/scripts/podman-compose.sh" ]] \
-    || die "scripts/podman-compose.sh not executable. Run: chmod +x scripts/*.sh"
+if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+    command -v docker >/dev/null 2>&1 \
+        || die "docker command not found in PATH."
+else
+    [[ -x "${ROOT_DIR}/scripts/podman-compose.sh" ]] \
+        || die "scripts/podman-compose.sh not executable. Run: chmod +x scripts/*.sh"
+fi
 
-info "Prerequisites OK."
+info "Prerequisites OK. Using runtime: ${CONTAINER_RUNTIME}."
 echo ""
 
 # ── Phase 1: in-app save on NAS ────────────────────────────────────────────────
@@ -221,7 +229,11 @@ echo ""
 ask "Confirm: build and start expense tracker on NUC?" || die "Aborted by user."
 
 cd "${ROOT_DIR}"
-./scripts/podman-compose.sh up -d --build
+if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+    docker compose up -d --build
+else
+    ./scripts/podman-compose.sh up -d --build
+fi
 
 info "Container started. Waiting 15 seconds for Streamlit to initialise..."
 sleep 15
@@ -242,7 +254,11 @@ echo "         (Remove the test row via the Data Editor tab afterwards if desire
 echo ""
 ask "All functional checks passed?" || {
     info "Validation failed. Stopping NUC container."
-    ./scripts/podman-compose.sh down
+    if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+        docker compose down
+    else
+        ./scripts/podman-compose.sh down
+    fi
     echo ""
     die "Cutover halted. Your data snapshot is preserved at: ${SNAPSHOT_DIR}"
 }
@@ -258,9 +274,15 @@ info "Keep the NAS container stopped as a read-only rollback for at least 7 days
 info "After the retention window, decommission the NAS container."
 echo ""
 echo "  Day-to-day NUC commands:"
-echo "    Start/rebuild : ./scripts/podman-compose.sh up -d --build"
-echo "    Stop          : ./scripts/podman-compose.sh down"
-echo "    View logs     : ./scripts/podman-compose.sh logs -f"
+if [[ "${CONTAINER_RUNTIME}" == "docker" ]]; then
+    echo "    Start/rebuild : docker compose up -d --build"
+    echo "    Stop          : docker compose down"
+    echo "    View logs     : docker compose logs -f"
+else
+    echo "    Start/rebuild : ./scripts/podman-compose.sh up -d --build"
+    echo "    Stop          : ./scripts/podman-compose.sh down"
+    echo "    View logs     : ./scripts/podman-compose.sh logs -f"
+fi
 echo "    Backup data   : ./scripts/data_backup.sh"
 echo "    Code watcher  : ./scripts/watcher_commit_open.sh ."
 echo ""
