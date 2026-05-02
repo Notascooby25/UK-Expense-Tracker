@@ -1,126 +1,204 @@
-# Expense Tracker
+# UK Expense Tracker
 
-Personal Streamlit expense tracker with CSV import, dashboard analytics, and optional Google Sheets sync.
+Streamlit-based expense tracker for importing, categorizing, analyzing, and exporting transaction data.
 
-## Public Repo Note
+This repository contains application code, container configuration, and safe example templates. It does not include real credentials or personal finance data.
 
-Yes, someone else can download and run this project.
+## What It Does
 
-- The repo includes enough code and templates to run the app locally.
-- It does not include your real secrets or personal finance data.
-- Google Sheets sync is optional and only works if the user adds their own service-account credentials.
+The app helps you build and maintain a single local transaction dataset, then explore it with dashboards, category tools, and export presets.
 
-## What Is In Git
+## Features
 
-- App source and container files
-- Safe Streamlit config in `.streamlit/config.toml`
-- Template/example files for local setup
+- Secure login via Streamlit secrets
+- Import from multiple sources:
+   - Google Sheets sync (optional)
+   - CSV upload (auto-detect plus Monzo, HSBC, Barclaycard formats)
+   - Pasted tabular transaction data
+   - Manual transaction entry
+- Save-to-disk workflow for persistent runtime files
+- Dashboard analytics:
+   - True income vs committed vs variable spend model
+   - Monthly cash flow, cumulative trend, top categories, top merchants, sunburst
+   - Financial year, calendar year, and rolling period filters
+- Category intelligence:
+   - Category standardization suggestions
+   - Ignore-list controls for noisy merchants
+- Data editor and bulk updates:
+   - Direct table editing
+   - Filtered bulk category/type updates
+- Export workflow:
+   - Advanced filters
+   - Saved filter presets
+   - Download filtered CSV
+- Internal transfer tracking tab for savings/investment movement analysis
 
-## What Stays Local
+## Runtime Files
 
-These files are intentionally ignored and should not be committed:
+The app reads and writes runtime data from:
 
-- `.streamlit/secrets.toml`
-- `data/` (runtime data folder)
-- `expense_database.csv`
-- `settings.json`
-- `saved_filters.json`
-- Backup/testing folders
+- data/expense_database.csv
+- data/settings.json
+- data/saved_filters.json
 
-## Local Setup
+Primary transaction columns in the database CSV:
 
-### Quick Start
+- Date
+- Name
+- Amount
+- Transaction_Type
+- Bank
+- Category
+- Notes
+- Financial_Year
 
-From the project root, create the local runtime files:
+Template files provided in the repository:
+
+- expense_database.example.csv
+- settings.example.json
+- saved_filters.example.json
+- .streamlit/secrets.toml.example
+
+## Quick Start
+
+1. Clone the repository and enter the project directory.
+
+2. Create local secrets and initial runtime files:
 
 ```bash
 cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+mkdir -p data
 cp expense_database.example.csv data/expense_database.csv
 cp settings.example.json data/settings.json
 cp saved_filters.example.json data/saved_filters.json
 ```
 
-Then edit `.streamlit/secrets.toml` and set at minimum:
+3. Edit .streamlit/secrets.toml and set at least:
 
-- `[auth].username`
-- `[auth].password`
+- [auth].username
+- [auth].password
 
-If you only want the app without Google Sheets sync, you can leave the `[connections.gsheets]` block as placeholders and simply avoid using the sync feature.
-
-1. Create your secrets file from the template:
-   - Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml`
-   - Fill in your auth credentials
-   - Fill in Google service account credentials only if you want Sheets sync
-2. Prepare runtime data files (optional):
-   - Copy `expense_database.example.csv` to `data/expense_database.csv`
-   - Copy `settings.example.json` to `data/settings.json`
-   - Copy `saved_filters.example.json` to `data/saved_filters.json`
-3. Run with Docker Compose:
+4. Start the app (local build):
 
 ```bash
 docker compose up -d --build
 ```
 
-Compose sets `EXPENSE_TRACKER_ENV=production`, so login requires explicit `[auth]` secrets.
+5. Open http://localhost:8501
 
-4. Open the app at `http://localhost:8501`
-5. Open the sidebar section named Startup Health to confirm secrets and runtime data files are configured.
+6. In the app sidebar, open Startup Health and confirm no missing runtime/secrets warnings.
 
-### What Works Immediately
+## Deployment Options
 
-- Manual login using your local `[auth]` credentials
-- Manual CSV upload
-- Manual transaction entry
-- Local save/load using the files under `data/`
+### Option A: Local Build Deployment
 
-### What Needs Extra Setup
+Use docker-compose.yml:
 
-- Google Sheets sync requires valid values in `[connections.gsheets]`
-- Any real personal finance dataset must be supplied locally by the user
+```bash
+docker compose up -d --build
+```
 
-## Runtime Paths
+### Option B: Prebuilt Image Deployment (GHCR)
 
-The app uses environment-based file paths:
+Use docker-compose.prod.yml:
 
-- `EXPENSE_TRACKER_DATA_DIR` (default `/app/data` in container, app directory when run directly)
-- `EXPENSE_TRACKER_DB_FILE` (default `expense_database.csv`)
-- `EXPENSE_TRACKER_SETTINGS_FILE` (default `settings.json`)
-- `EXPENSE_TRACKER_FILTERS_FILE` (default `saved_filters.json`)
-- `EXPENSE_TRACKER_ASSETS_DIR` (default app directory)
-- `EXPENSE_TRACKER_LOGO_FILE` (default `logo.png`)
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
 
-## Auth Modes
+This mode is suitable for image-based updates and includes a Watchtower-compatible label in the compose file.
 
-- `EXPENSE_TRACKER_ENV=production`: enforces secrets-based auth and disables default fallback credentials.
-- `EXPENSE_TRACKER_REQUIRE_AUTH_SECRETS=true`: explicitly enforces secrets-based auth in any environment.
-- `EXPENSE_TRACKER_DEV_FALLBACK_USER` and `EXPENSE_TRACKER_DEV_FALLBACK_PASS`: optional development-only fallback credentials when auth secrets are missing.
+## Environment Variables
 
-Production recommendation:
+- EXPENSE_TRACKER_DATA_DIR
+  - Runtime data directory
+  - Default in container setup: /app/data
+- EXPENSE_TRACKER_DB_FILE
+  - Database filename
+  - Default: expense_database.csv
+- EXPENSE_TRACKER_SETTINGS_FILE
+  - Settings filename
+  - Default: settings.json
+- EXPENSE_TRACKER_FILTERS_FILE
+  - Saved filters filename
+  - Default: saved_filters.json
+- EXPENSE_TRACKER_ASSETS_DIR
+  - Asset directory (logo)
+  - Default: app base directory
+- EXPENSE_TRACKER_LOGO_FILE
+  - Logo filename
+  - Default: logo.png
+- EXPENSE_TRACKER_ENV
+  - Set to production to enforce secrets-based auth
+- EXPENSE_TRACKER_REQUIRE_AUTH_SECRETS
+  - Explicitly enforce secrets-based auth
+- EXPENSE_TRACKER_DEV_FALLBACK_USER
+  - Development-only fallback username
+- EXPENSE_TRACKER_DEV_FALLBACK_PASS
+  - Development-only fallback password
 
-- Set `EXPENSE_TRACKER_ENV=production` and provide `[auth]` credentials in `.streamlit/secrets.toml`.
-- Do not rely on fallback credentials outside local development.
+## Authentication and Secrets
 
-## CI Multi-Arch Build
+Recommended for production:
 
-GitHub Actions workflow:
+- Set EXPENSE_TRACKER_ENV=production
+- Provide [auth] credentials in .streamlit/secrets.toml
+- Do not rely on development fallback credentials outside local development
 
-- `.github/workflows/container-build-multiarch.yml`
-- Builds for `linux/amd64` and `linux/arm64`
-- Build/test only (no registry push)
+Google Sheets sync is optional. Configure [connections.gsheets] in .streamlit/secrets.toml only if you need sync.
 
-This validates Intel NUC compatibility while keeping deployment manual.
+## CI/CD Workflows
 
-## Manual Deployment To Intel NUC
+- .github/workflows/container-build-multiarch.yml
+  - Multi-arch validation build (linux/amd64, linux/arm64), no push
+- .github/workflows/publish-ghcr.yml
+  - Builds and pushes GHCR images with latest and commit SHA tags
 
-1. Pull latest code on the NUC.
-2. Add `.streamlit/secrets.toml` on the server.
-3. Ensure `data/` exists with your runtime files.
-4. Run `docker compose up -d --build`.
-5. Verify login, data load/save, and dashboard tabs.
+## Data and Privacy
 
-## First Publish Checklist
+Sensitive local files are intentionally ignored by git, including:
 
-- Confirm `.streamlit/secrets.toml` is not tracked.
-- Confirm personal CSV/JSON files are not tracked.
-- Run the multi-arch workflow once from a branch/PR.
-- Rotate any credentials that were previously stored in plaintext.
+- .streamlit/secrets.toml
+- data/
+- local runtime CSV/JSON files
+- local backup/snapshot folders
+
+Before publishing or sharing:
+
+- Verify no personal data files are tracked
+- Verify no real credentials are tracked
+- Rotate credentials if they were ever exposed
+
+## Common Commands
+
+Start (local build):
+
+```bash
+docker compose up -d --build
+```
+
+Start (GHCR image):
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+View logs:
+
+```bash
+docker compose logs -f
+```
+
+View logs (GHCR/prod file):
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f
+```
+
+Stop:
+
+```bash
+docker compose down
+```
