@@ -22,6 +22,9 @@ saved_filters*.json
 .history/
 Working back up database & APP- testing/
 
+# Migration cutover snapshots (contain real data)
+.cutover_snapshot_*/
+
 # Editor/OS
 .DS_Store
 .vscode/
