@@ -37,7 +37,7 @@ jobs:
         with:
           images: ghcr.io/notascooby25/uk-expense-tracker
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
             type=sha,format=short
 
       - name: Build and push
