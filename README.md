@@ -202,3 +202,29 @@ Stop:
 ```bash
 docker compose down
 ```
+
+## Automated Backups (Cron)
+
+The project includes:
+
+- `scripts/data_backup.sh` for timestamped backups of runtime data files
+- built-in retention, so old backups are pruned automatically
+
+By default, each run keeps only the latest 4 backup archives and checksums.
+
+Install or update a cron job that runs every 4 days at 03:00:
+
+```bash
+chmod +x scripts/setup_backup_cron.sh scripts/data_backup.sh
+./scripts/setup_backup_cron.sh /srv/shared/backups/expense_tracker 4 "0 3 */4 * *"
+```
+
+Notes:
+
+- Cron schedule `*/4` in day-of-month means every 4th day of each month.
+- Backup logs are written to `logs/data_backup_cron.log`.
+- You can run a manual backup at any time:
+
+```bash
+./scripts/data_backup.sh /srv/shared/backups/expense_tracker 4
+```
