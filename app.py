@@ -16,7 +16,7 @@ true_income_categories = ['Income', 'Salary', 'Wages', 'Interest', 'Bonus']
 # --- Configuration & Setup ---
 st.set_page_config(page_title="UK Expense Tracker", layout="wide")
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.3.1"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.getenv("EXPENSE_TRACKER_DATA_DIR", BASE_DIR)

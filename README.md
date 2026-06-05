@@ -132,6 +132,8 @@ Check update monitor logs:
 docker compose -f docker-compose.prod.yml logs -f watchtower
 ```
 
+If Watchtower logs show a Docker API compatibility error such as `client version 1.25 is too old`, the production compose file pins `DOCKER_API_VERSION=1.40` for the Watchtower container to match newer Docker daemons.
+
 Disable automatic updates:
 
 - Stop/remove the `watchtower` service, or
