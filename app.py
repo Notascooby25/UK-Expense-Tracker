@@ -16,7 +16,7 @@ true_income_categories = ['Income', 'Salary', 'Wages', 'Interest', 'Bonus']
 # --- Configuration & Setup ---
 st.set_page_config(page_title="UK Expense Tracker", layout="wide")
 
-APP_VERSION = "0.3.1"
+APP_VERSION = "0.3.2"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.getenv("EXPENSE_TRACKER_DATA_DIR", BASE_DIR)
@@ -873,6 +873,7 @@ with tab4:
         st.session_state['bulk_bank'] = "All"
         st.session_state['bulk_cat'] = "All"
         st.session_state['bulk_name'] = ""
+        st.session_state['bulk_notes'] = ""
         st.session_state['bulk_date'] = ()
         st.rerun()
 
@@ -925,16 +926,18 @@ with tab4:
                 st.toast(" Database successfully saved to disk!")
 
         else:
-            b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+            b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
             b_bank = b_col1.selectbox("Filter Bank", ["All"] + master_banks, key="bulk_bank")
             b_cat = b_col2.selectbox("Filter Category", ["All"] + master_cats, key="bulk_cat")
             b_name = b_col3.text_input("Merchant Name contains", "", key="bulk_name")
             b_date = b_col4.date_input("Date Range", [], key="bulk_date")
+            b_notes = b_col5.text_input("Notes contains", "", key="bulk_notes")
             
             bulk_df = st.session_state.df.copy()
             if b_bank != "All": bulk_df = bulk_df[bulk_df['Bank'] == b_bank]
             if b_cat != "All": bulk_df = bulk_df[bulk_df['Category'] == b_cat]
             if b_name: bulk_df = bulk_df[bulk_df['Name'].str.contains(b_name, case=False, na=False)]
+            if b_notes: bulk_df = bulk_df[bulk_df['Notes'].str.contains(b_notes, case=False, na=False)]
             if len(b_date) == 2:
                 bulk_df = bulk_df[(bulk_df['Date'] >= pd.Timestamp(b_date[0])) & (bulk_df['Date'] <= pd.Timestamp(b_date[1]))]
 
