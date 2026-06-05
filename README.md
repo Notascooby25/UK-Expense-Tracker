@@ -148,6 +148,8 @@ In the sidebar under `Advanced Settings` -> `Automatic Rules`, you can create ru
 - `Person / merchant name contains`
 - `Notes contains`
 
+You can also edit an existing rule, remove it, or reorder it to change which rule wins first.
+
 When a new transaction is imported and both conditions match, the app sets the category to the chosen value automatically.
 
 You can also test a rule in the sidebar before syncing by entering a sample name and notes value. The preview uses the same first-match logic as the sync/import path, so it shows exactly which rule would fire.

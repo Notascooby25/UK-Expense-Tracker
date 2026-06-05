@@ -16,7 +16,7 @@ true_income_categories = ['Income', 'Salary', 'Wages', 'Interest', 'Bonus']
 # --- Configuration & Setup ---
 st.set_page_config(page_title="UK Expense Tracker", layout="wide")
 
-APP_VERSION = "0.4.2"
+APP_VERSION = "0.4.3"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.getenv("EXPENSE_TRACKER_DATA_DIR", BASE_DIR)
@@ -165,6 +165,10 @@ def move_list_item(items, from_index, to_index):
     item = items.pop(from_index)
     items.insert(to_index, item)
     return items
+
+
+def format_auto_rule(rule, idx):
+    return f"{idx + 1}. name='{rule.get('name_contains', '')}' notes='{rule.get('notes_contains', '')}' -> {rule.get('category', '')}"
 
 def has_auth_secrets():
     try:
@@ -540,11 +544,8 @@ with st.sidebar:
                 hide_index=True
             )
 
-            rule_options = [
-                f"{idx + 1}. name='{rule.get('name_contains', '')}' notes='{rule.get('notes_contains', '')}' -> {rule.get('category', '')}"
-                for idx, rule in enumerate(st.session_state.app_settings["auto_rules"])
-            ]
-            selected_rule = st.selectbox("Reorder rule", ["-- Select --"] + rule_options)
+            rule_options = [format_auto_rule(rule, idx) for idx, rule in enumerate(st.session_state.app_settings["auto_rules"])]
+            selected_rule = st.selectbox("Reorder rule", ["-- Select --"] + rule_options, key="auto_rule_reorder_select")
 
             reorder_col1, reorder_col2 = st.columns(2)
             with reorder_col1:
@@ -570,6 +571,52 @@ with st.sidebar:
                         )
                         save_database(show_success=False)
                         st.toast("✅ Rule moved down")
+                        st.rerun()
+
+            edit_select = st.selectbox("Edit rule", ["-- Select --"] + rule_options, key="auto_rule_edit_select")
+            edit_col1, edit_col2 = st.columns(2)
+            with edit_col1:
+                if st.button("Load Selected Rule"):
+                    if edit_select != "-- Select --":
+                        selected_idx = rule_options.index(edit_select)
+                        selected_rule_data = st.session_state.app_settings["auto_rules"][selected_idx]
+                        st.session_state["auto_rule_edit_index"] = selected_idx
+                        st.session_state["auto_rule_edit_name"] = selected_rule_data.get("name_contains", "")
+                        st.session_state["auto_rule_edit_notes"] = selected_rule_data.get("notes_contains", "")
+                        st.session_state["auto_rule_edit_category"] = selected_rule_data.get("category", master_cats[0])
+                        st.rerun()
+            with edit_col2:
+                if st.button("Clear Rule Edit"):
+                    st.session_state.pop("auto_rule_edit_index", None)
+                    st.session_state.pop("auto_rule_edit_name", None)
+                    st.session_state.pop("auto_rule_edit_notes", None)
+                    st.session_state.pop("auto_rule_edit_category", None)
+                    st.rerun()
+
+            edit_idx = st.session_state.get("auto_rule_edit_index")
+            if edit_idx is not None and 0 <= edit_idx < len(st.session_state.app_settings["auto_rules"]):
+                current_rule = st.session_state.app_settings["auto_rules"][edit_idx]
+                default_category = st.session_state.get("auto_rule_edit_category", current_rule.get("category", master_cats[0]))
+                if default_category not in master_cats:
+                    default_category = master_cats[0]
+
+                with st.form("edit_auto_rule_form"):
+                    e_name = st.text_input("Edit name / merchant contains", key="auto_rule_edit_name")
+                    e_notes = st.text_input("Edit notes contains", key="auto_rule_edit_notes")
+                    e_cat = st.selectbox("Edit category to", master_cats, index=master_cats.index(default_category), key="auto_rule_edit_category")
+                    e_submit = st.form_submit_button("Save Rule Changes")
+
+                if e_submit:
+                    if not e_name and not e_notes:
+                        st.warning("Enter at least one match field: name or notes.")
+                    else:
+                        st.session_state.app_settings["auto_rules"][edit_idx] = {
+                            "name_contains": e_name.strip(),
+                            "notes_contains": e_notes.strip(),
+                            "category": e_cat,
+                        }
+                        save_database(show_success=False)
+                        st.toast("✅ Automatic rule updated!")
                         st.rerun()
         else:
             st.info("No automatic rules set for this account scope yet.")
@@ -610,15 +657,16 @@ with st.sidebar:
                 st.rerun()
 
         if st.session_state.app_settings["auto_rules"]:
-            rule_options = [
-                f"{idx + 1}. name='{rule.get('name_contains', '')}' notes='{rule.get('notes_contains', '')}' -> {rule.get('category', '')}"
-                for idx, rule in enumerate(st.session_state.app_settings["auto_rules"])
-            ]
+            rule_options = [format_auto_rule(rule, idx) for idx, rule in enumerate(st.session_state.app_settings["auto_rules"])]
             selected_rule = st.selectbox("Remove rule", ["-- Select --"] + rule_options)
             if st.button("Remove Selected Rule"):
                 if selected_rule != "-- Select --":
                     selected_idx = rule_options.index(selected_rule)
                     st.session_state.app_settings["auto_rules"].pop(selected_idx)
+                    st.session_state.pop("auto_rule_edit_index", None)
+                    st.session_state.pop("auto_rule_edit_name", None)
+                    st.session_state.pop("auto_rule_edit_notes", None)
+                    st.session_state.pop("auto_rule_edit_category", None)
                     save_database(show_success=False)
                     st.toast("✅ Automatic rule removed!")
                     st.rerun()
