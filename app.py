@@ -20,9 +20,33 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.getenv("EXPENSE_TRACKER_DATA_DIR", BASE_DIR)
 ASSETS_DIR = os.getenv("EXPENSE_TRACKER_ASSETS_DIR", BASE_DIR)
 
-DB_FILE = os.path.join(DATA_DIR, os.getenv("EXPENSE_TRACKER_DB_FILE", "expense_database.csv"))
-SETTINGS_FILE = os.path.join(DATA_DIR, os.getenv("EXPENSE_TRACKER_SETTINGS_FILE", "settings.json"))
-FILTER_FILE = os.path.join(DATA_DIR, os.getenv("EXPENSE_TRACKER_FILTERS_FILE", "saved_filters.json"))
+BASE_DB_FILENAME = os.getenv("EXPENSE_TRACKER_DB_FILE", "expense_database.csv")
+BASE_SETTINGS_FILENAME = os.getenv("EXPENSE_TRACKER_SETTINGS_FILE", "settings.json")
+BASE_FILTER_FILENAME = os.getenv("EXPENSE_TRACKER_FILTERS_FILE", "saved_filters.json")
+
+ACCOUNT_SCOPE_PERSONAL = "Personal"
+ACCOUNT_SCOPE_JOINT = "Joint"
+ACCOUNT_SCOPES = [ACCOUNT_SCOPE_PERSONAL, ACCOUNT_SCOPE_JOINT]
+
+
+def get_scoped_filename(base_filename, account_scope):
+    if account_scope == ACCOUNT_SCOPE_PERSONAL:
+        return base_filename
+    stem, ext = os.path.splitext(base_filename)
+    return f"{stem}_joint{ext}"
+
+
+def build_runtime_paths(account_scope):
+    return (
+        os.path.join(DATA_DIR, get_scoped_filename(BASE_DB_FILENAME, account_scope)),
+        os.path.join(DATA_DIR, get_scoped_filename(BASE_SETTINGS_FILENAME, account_scope)),
+        os.path.join(DATA_DIR, get_scoped_filename(BASE_FILTER_FILENAME, account_scope)),
+    )
+
+
+DB_FILE = ""
+SETTINGS_FILE = ""
+FILTER_FILE = ""
 LOGO_FILE = os.path.join(ASSETS_DIR, os.getenv("EXPENSE_TRACKER_LOGO_FILE", "logo.png"))
 COLS = ['Date', 'Name', 'Amount', 'Transaction_Type', 'Bank', 'Category', 'Notes', 'Financial_Year']
 
@@ -40,7 +64,8 @@ DEFAULT_SETTINGS = {
     "custom_banks": [],
     "committed_categories": [],
     "committed_presets": {},
-    "monzo_sheet_url": ""
+    "monzo_sheet_url": "",
+    "monzo_sheet_worksheet": ""
 }
 
 SECRETS_EXAMPLE_FILE = os.path.join(BASE_DIR, ".streamlit", "secrets.toml.example")
@@ -71,9 +96,14 @@ def get_read_path(filepath):
     return filepath
 
 def with_default_settings(settings):
+    scope = st.session_state.get("active_account_scope", ACCOUNT_SCOPE_PERSONAL)
     merged = DEFAULT_SETTINGS.copy()
+    if not merged["monzo_sheet_worksheet"]:
+        merged["monzo_sheet_worksheet"] = "Joint Account Transactions" if scope == ACCOUNT_SCOPE_JOINT else "Personal Account Transactions"
     if isinstance(settings, dict):
         merged.update(settings)
+    if not str(merged.get("monzo_sheet_worksheet", "")).strip():
+        merged["monzo_sheet_worksheet"] = "Joint Account Transactions" if scope == ACCOUNT_SCOPE_JOINT else "Personal Account Transactions"
     return merged
 
 def has_auth_secrets():
@@ -128,6 +158,30 @@ if not st.session_state.authenticated:
             else:
                 st.error("Incorrect username or password.")
     st.stop()
+
+if 'active_account_scope' not in st.session_state:
+    st.session_state.active_account_scope = ACCOUNT_SCOPE_PERSONAL
+
+with st.sidebar:
+    st.markdown("### Account Scope")
+    selected_scope = st.radio(
+        "Show data for",
+        ACCOUNT_SCOPES,
+        index=ACCOUNT_SCOPES.index(st.session_state.active_account_scope),
+        help="Personal and Joint are stored in separate files so they never appear together."
+    )
+
+if selected_scope != st.session_state.active_account_scope:
+    st.session_state.active_account_scope = selected_scope
+    st.session_state.new_sync_rows = pd.DataFrame(columns=COLS)
+    st.session_state.updated_sync_rows = pd.DataFrame(columns=COLS)
+    st.session_state.unsaved_sync = False
+    st.session_state.pop("initialized", None)
+    st.session_state.pop("app_settings", None)
+    st.session_state.pop("export_presets", None)
+    st.rerun()
+
+DB_FILE, SETTINGS_FILE, FILTER_FILE = build_runtime_paths(st.session_state.active_account_scope)
 
 def build_startup_health():
     checks = [
@@ -355,6 +409,7 @@ def process_new_data(new_df, source_format="Auto-Detect"):
 
 # --- UI Sidebar ---
 with st.sidebar:
+    st.caption(f"Active scope: {st.session_state.active_account_scope}")
     if st.button(" Save Database to Disk", type="primary", use_container_width=True):
         save_database()
 
@@ -370,6 +425,7 @@ with st.sidebar:
             st.info(msg)
 
         st.caption(f"Data directory: {DATA_DIR}")
+        st.caption(f"Database file: {os.path.basename(DB_FILE)}")
         
     st.divider()
     st.markdown("** Global Data Filter**")
@@ -447,12 +503,21 @@ with tab1:
     with col_left:
         st.markdown("**Google Sheets Sync**")
         s_url = st.text_input("Monzo Sheet URL:", value=st.session_state.app_settings.get("monzo_sheet_url", ""))
+        s_worksheet = st.text_input(
+            "Worksheet name:",
+            value=st.session_state.app_settings.get("monzo_sheet_worksheet", "")
+        )
         if st.button("Sync Now", type="primary"):
             if s_url:
                 with st.spinner("Fetching Live Data..."):
                     st.session_state.app_settings["monzo_sheet_url"] = s_url
+                    st.session_state.app_settings["monzo_sheet_worksheet"] = s_worksheet.strip() or st.session_state.app_settings["monzo_sheet_worksheet"]
                     conn = st.connection("gsheets", type=GSheetsConnection)
-                    df_s = conn.read(spreadsheet=s_url, worksheet="Personal Account Transactions", ttl=0)
+                    df_s = conn.read(
+                        spreadsheet=s_url,
+                        worksheet=st.session_state.app_settings["monzo_sheet_worksheet"],
+                        ttl=0
+                    )
                     process_new_data(df_s, "Monzo")
                     st.rerun()
                 
