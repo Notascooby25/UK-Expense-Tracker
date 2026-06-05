@@ -16,7 +16,7 @@ true_income_categories = ['Income', 'Salary', 'Wages', 'Interest', 'Bonus']
 # --- Configuration & Setup ---
 st.set_page_config(page_title="UK Expense Tracker", layout="wide")
 
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.4.2"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.getenv("EXPENSE_TRACKER_DATA_DIR", BASE_DIR)
@@ -119,6 +119,23 @@ def rule_contains(text, fragment):
     return fragment.lower() in clean_string(text).lower()
 
 
+def get_matching_auto_rule(row, rules=None):
+    rules = st.session_state.app_settings.get("auto_rules", []) if rules is None else rules
+    if not rules:
+        return None, None
+
+    for idx, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            continue
+        if not rule_contains(row.get("Notes", ""), rule.get("notes_contains", "")):
+            continue
+        if not rule_contains(row.get("Name", ""), rule.get("name_contains", "")):
+            continue
+        return idx, rule
+
+    return None, None
+
+
 def apply_auto_rules(df):
     rules = st.session_state.app_settings.get("auto_rules", [])
     if not rules or df.empty:
@@ -129,18 +146,11 @@ def apply_auto_rules(df):
         df["Category"] = ""
 
     for idx, row in df.iterrows():
-        for rule in rules:
-            if not isinstance(rule, dict):
-                continue
-            if not rule_contains(row.get("Notes", ""), rule.get("notes_contains", "")):
-                continue
-            if not rule_contains(row.get("Name", ""), rule.get("name_contains", "")):
-                continue
-
+        matched_idx, rule = get_matching_auto_rule(row, rules)
+        if rule:
             category = clean_string(rule.get("category", ""))
             if category:
                 df.at[idx, "Category"] = category
-            break
 
     return df
 
@@ -563,6 +573,20 @@ with st.sidebar:
                         st.rerun()
         else:
             st.info("No automatic rules set for this account scope yet.")
+
+        st.markdown("**Test Rule Match**")
+        test_name = st.text_input("Test name / merchant", placeholder="e.g. Sarah or Tesco", key="auto_rule_test_name")
+        test_notes = st.text_input("Test notes", placeholder="e.g. FOOD or lunch", key="auto_rule_test_notes")
+
+        if test_name or test_notes:
+            preview_row = {"Name": test_name, "Notes": test_notes}
+            matched_idx, matched_rule = get_matching_auto_rule(preview_row)
+            if matched_rule:
+                st.success(
+                    f"Rule {matched_idx + 1} would fire: name='{matched_rule.get('name_contains', '')}' notes='{matched_rule.get('notes_contains', '')}' -> {matched_rule.get('category', '')}"
+                )
+            else:
+                st.warning("No automatic rule would match this sample.")
 
         with st.form("auto_rule_form", clear_on_submit=True):
             r_name = st.text_input("Person / merchant name contains", placeholder="e.g. Sarah")
