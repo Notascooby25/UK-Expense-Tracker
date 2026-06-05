@@ -16,7 +16,7 @@ true_income_categories = ['Income', 'Salary', 'Wages', 'Interest', 'Bonus']
 # --- Configuration & Setup ---
 st.set_page_config(page_title="UK Expense Tracker", layout="wide")
 
-APP_VERSION = "0.3.2"
+APP_VERSION = "0.4.0"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.getenv("EXPENSE_TRACKER_DATA_DIR", BASE_DIR)
@@ -66,6 +66,7 @@ DEFAULT_SETTINGS = {
     "custom_banks": [],
     "committed_categories": [],
     "committed_presets": {},
+    "auto_rules": [],
     "monzo_sheet_url": "",
     "monzo_sheet_worksheet": ""
 }
@@ -106,7 +107,42 @@ def with_default_settings(settings):
         merged.update(settings)
     if not str(merged.get("monzo_sheet_worksheet", "")).strip():
         merged["monzo_sheet_worksheet"] = "Joint Account Transactions" if scope == ACCOUNT_SCOPE_JOINT else "Personal Account Transactions"
+    if not isinstance(merged.get("auto_rules"), list):
+        merged["auto_rules"] = []
     return merged
+
+
+def rule_contains(text, fragment):
+    fragment = clean_string(fragment)
+    if not fragment:
+        return True
+    return fragment.lower() in clean_string(text).lower()
+
+
+def apply_auto_rules(df):
+    rules = st.session_state.app_settings.get("auto_rules", [])
+    if not rules or df.empty:
+        return df
+
+    df = df.copy()
+    if "Category" not in df.columns:
+        df["Category"] = ""
+
+    for idx, row in df.iterrows():
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            if not rule_contains(row.get("Notes", ""), rule.get("notes_contains", "")):
+                continue
+            if not rule_contains(row.get("Name", ""), rule.get("name_contains", "")):
+                continue
+
+            category = clean_string(rule.get("category", ""))
+            if category:
+                df.at[idx, "Category"] = category
+            break
+
+    return df
 
 def has_auth_secrets():
     try:
@@ -376,6 +412,7 @@ def process_new_data(new_df, source_format="Auto-Detect"):
         new_df['Name'] = new_df['Name'].apply(clean_string)
         new_df['Category'] = new_df['Category'].apply(clean_string)
         new_df['Transaction_Type'] = new_df['Transaction_Type'].apply(clean_string)
+        new_df = apply_auto_rules(new_df)
 
         matched_indexes = set()
         for _, row in new_df.iterrows():
@@ -464,9 +501,62 @@ with st.sidebar:
                     save_database(show_success=False)
                     st.toast(f"✅ Preset '{new_cp_name}' saved!")
                     st.rerun()
+
+        st.divider()
+        st.markdown("**2. Automatic Rules**")
+        st.caption("Rules are saved separately for Personal and Joint because each scope has its own settings file.")
+
+        if "auto_rules" not in st.session_state.app_settings:
+            st.session_state.app_settings["auto_rules"] = []
+
+        if st.session_state.app_settings["auto_rules"]:
+            rules_df = pd.DataFrame(st.session_state.app_settings["auto_rules"])
+            rules_df = rules_df.fillna("")
+            st.dataframe(
+                rules_df[["name_contains", "notes_contains", "category"]],
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No automatic rules set for this account scope yet.")
+
+        with st.form("auto_rule_form", clear_on_submit=True):
+            r_name = st.text_input("Person / merchant name contains", placeholder="e.g. Sarah")
+            r_notes = st.text_input("Notes contains", placeholder="e.g. FOOD")
+            r_cat = st.selectbox("Set category to", master_cats)
+            r_submit = st.form_submit_button("Add Auto Rule")
+
+        if r_submit:
+            if not r_name and not r_notes:
+                st.warning("Enter at least one match field: name or notes.")
+            else:
+                st.session_state.app_settings["auto_rules"].append(
+                    {
+                        "name_contains": r_name.strip(),
+                        "notes_contains": r_notes.strip(),
+                        "category": r_cat,
+                    }
+                )
+                save_database(show_success=False)
+                st.toast("✅ Automatic rule saved for this account scope!")
+                st.rerun()
+
+        if st.session_state.app_settings["auto_rules"]:
+            rule_options = [
+                f"{idx + 1}. name='{rule.get('name_contains', '')}' notes='{rule.get('notes_contains', '')}' -> {rule.get('category', '')}"
+                for idx, rule in enumerate(st.session_state.app_settings["auto_rules"])
+            ]
+            selected_rule = st.selectbox("Remove rule", ["-- Select --"] + rule_options)
+            if st.button("Remove Selected Rule"):
+                if selected_rule != "-- Select --":
+                    selected_idx = rule_options.index(selected_rule)
+                    st.session_state.app_settings["auto_rules"].pop(selected_idx)
+                    save_database(show_success=False)
+                    st.toast("✅ Automatic rule removed!")
+                    st.rerun()
                     
         st.divider()
-        st.markdown("**2. System Setup**")
+        st.markdown("**3. System Setup**")
         new_cat = st.text_input("Add New Category")
         if st.button("Add Category", use_container_width=True) and new_cat:
             st.session_state.app_settings["custom_categories"].append(new_cat)

@@ -139,6 +139,17 @@ Disable automatic updates:
 - Stop/remove the `watchtower` service, or
 - Remove the label `com.centurylinklabs.watchtower.enable=true` from the app service
 
+### Automatic Categorization Rules
+
+Rules are saved per account scope, so Personal and Joint can each have different auto-categorization behavior.
+
+In the sidebar under `Advanced Settings` -> `Automatic Rules`, you can create rules that match on:
+
+- `Person / merchant name contains`
+- `Notes contains`
+
+When a new transaction is imported and both conditions match, the app sets the category to the chosen value automatically.
+
 ## Environment Variables
 
 - EXPENSE_TRACKER_DATA_DIR
