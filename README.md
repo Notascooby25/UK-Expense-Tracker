@@ -109,6 +109,34 @@ docker compose -f docker-compose.prod.yml up -d
 
 This mode is suitable for image-based updates and includes a Watchtower-compatible label in the compose file.
 
+### Automatic Updates (GHCR -> Server)
+
+Production compose includes a `watchtower` service and enables update monitoring on the app container via label.
+
+How it works:
+
+- Push commit to `main`/`master`
+- GitHub Actions publishes a new GHCR image (`latest` + SHA)
+- Watchtower checks every 5 minutes (`--interval 300`)
+- If a newer `latest` image exists, Watchtower pulls and recreates the app container automatically
+
+Start/update production stack:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Check update monitor logs:
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f watchtower
+```
+
+Disable automatic updates:
+
+- Stop/remove the `watchtower` service, or
+- Remove the label `com.centurylinklabs.watchtower.enable=true` from the app service
+
 ## Environment Variables
 
 - EXPENSE_TRACKER_DATA_DIR
