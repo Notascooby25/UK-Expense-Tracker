@@ -150,6 +150,8 @@ In the sidebar under `Advanced Settings` -> `Automatic Rules`, you can create ru
 
 When a new transaction is imported and both conditions match, the app sets the category to the chosen value automatically.
 
+Rule order matters. If more than one rule could match, the app uses the first matching rule in the list. Use `Move Rule Up` / `Move Rule Down` to control priority.
+
 ## Environment Variables
 
 - EXPENSE_TRACKER_DATA_DIR

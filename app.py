@@ -16,7 +16,7 @@ true_income_categories = ['Income', 'Salary', 'Wages', 'Interest', 'Bonus']
 # --- Configuration & Setup ---
 st.set_page_config(page_title="UK Expense Tracker", layout="wide")
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.getenv("EXPENSE_TRACKER_DATA_DIR", BASE_DIR)
@@ -143,6 +143,18 @@ def apply_auto_rules(df):
             break
 
     return df
+
+
+def move_list_item(items, from_index, to_index):
+    if from_index == to_index:
+        return items
+    if from_index < 0 or from_index >= len(items):
+        return items
+    to_index = max(0, min(to_index, len(items) - 1))
+    items = list(items)
+    item = items.pop(from_index)
+    items.insert(to_index, item)
+    return items
 
 def has_auth_secrets():
     try:
@@ -517,6 +529,38 @@ with st.sidebar:
                 use_container_width=True,
                 hide_index=True
             )
+
+            rule_options = [
+                f"{idx + 1}. name='{rule.get('name_contains', '')}' notes='{rule.get('notes_contains', '')}' -> {rule.get('category', '')}"
+                for idx, rule in enumerate(st.session_state.app_settings["auto_rules"])
+            ]
+            selected_rule = st.selectbox("Reorder rule", ["-- Select --"] + rule_options)
+
+            reorder_col1, reorder_col2 = st.columns(2)
+            with reorder_col1:
+                if st.button("Move Rule Up"):
+                    if selected_rule != "-- Select --":
+                        selected_idx = rule_options.index(selected_rule)
+                        st.session_state.app_settings["auto_rules"] = move_list_item(
+                            st.session_state.app_settings["auto_rules"],
+                            selected_idx,
+                            selected_idx - 1,
+                        )
+                        save_database(show_success=False)
+                        st.toast("✅ Rule moved up")
+                        st.rerun()
+            with reorder_col2:
+                if st.button("Move Rule Down"):
+                    if selected_rule != "-- Select --":
+                        selected_idx = rule_options.index(selected_rule)
+                        st.session_state.app_settings["auto_rules"] = move_list_item(
+                            st.session_state.app_settings["auto_rules"],
+                            selected_idx,
+                            selected_idx + 1,
+                        )
+                        save_database(show_success=False)
+                        st.toast("✅ Rule moved down")
+                        st.rerun()
         else:
             st.info("No automatic rules set for this account scope yet.")
 
