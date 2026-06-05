@@ -16,6 +16,8 @@ true_income_categories = ['Income', 'Salary', 'Wages', 'Interest', 'Bonus']
 # --- Configuration & Setup ---
 st.set_page_config(page_title="UK Expense Tracker", layout="wide")
 
+APP_VERSION = "0.3.0"
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.getenv("EXPENSE_TRACKER_DATA_DIR", BASE_DIR)
 ASSETS_DIR = os.getenv("EXPENSE_TRACKER_ASSETS_DIR", BASE_DIR)
@@ -170,6 +172,7 @@ with st.sidebar:
         index=ACCOUNT_SCOPES.index(st.session_state.active_account_scope),
         help="Personal and Joint are stored in separate files so they never appear together."
     )
+    st.caption(f"Version {APP_VERSION}")
 
 if selected_scope != st.session_state.active_account_scope:
     st.session_state.active_account_scope = selected_scope
