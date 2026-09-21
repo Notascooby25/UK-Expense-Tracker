@@ -1,31 +1,49 @@
 #!/usr/bin/env bash
 # data_backup.sh — timestamped backup of expense tracker runtime data.
 #
-# Run BEFORE any code update or before stopping for cutover.
+# Run BEFORE any code update or before stopping for cutover, and daily from cron
+# (see scripts/setup_backup_cron.sh).
 #
 # Usage:
 #   ./scripts/data_backup.sh [output_dir] [retention_count]
 #
 # Defaults:
-#   OUTPUT_DIR = /srv/shared/backups/expense_tracker
-#   RETENTION_COUNT = 4
+#   OUTPUT_DIR = /srv/shared/backups
+#   RETENTION_COUNT = 14
 #   DATA_DIR   = ./data  (relative to project root)
 #
-# Backup includes:
-#   data/expense_database.csv
+# The archive contains the whole data/ directory, so nothing has to be added here
+# when the app grows a new runtime file. That currently means:
+#   data/expense_database.csv        (required)
 #   data/settings.json
 #   data/saved_filters.json
+#   data/expense_database_joint.csv  and  data/settings_joint.json  (joint account)
+# .gitkeep and *.tmp / *.lock files are left out.
+#
+# NOT included, deliberately: .streamlit/secrets.toml. The Google copy of this
+# archive must not carry credentials; keep secrets.toml in your password manager
+# (the NAS folder mirror also holds a copy).
+#
+# Restore:  tar -xzf expense_tracker_data_<ts>.tar.gz -C /srv/UK-Expense-Tracker
+# Verify:   cd <dir holding the archive> && sha256sum -c expense_tracker_data_<ts>.sha256
+#
+# The archive is built as a .tmp file, self-checked, and only then renamed into
+# place, so a failed run never leaves something that looks like a good backup.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-OUTPUT_DIR="${1:-/srv/shared/backups/expense_tracker}"
-RETENTION_COUNT="${2:-4}"
+OUTPUT_DIR="${1:-/srv/shared/backups}"
+RETENTION_COUNT="${2:-14}"
 DATA_DIR="${ROOT_DIR}/data"
+MAIN_CSV="expense_database.csv"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-ARCHIVE="${OUTPUT_DIR}/expense_tracker_data_${TIMESTAMP}.tar.gz"
+ARCHIVE_NAME="expense_tracker_data_${TIMESTAMP}.tar.gz"
+ARCHIVE="${OUTPUT_DIR}/${ARCHIVE_NAME}"
+TMP_ARCHIVE="${ARCHIVE}.tmp"
+CHECKSUM_FILE="${OUTPUT_DIR}/expense_tracker_data_${TIMESTAMP}.sha256"
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "[data_backup] $*"; }
@@ -36,25 +54,37 @@ fi
 
 mkdir -p "${OUTPUT_DIR}" || die "Cannot create output directory: ${OUTPUT_DIR}"
 
-declare -a FILES_TO_BACKUP=()
-for f in expense_database.csv settings.json saved_filters.json; do
-    src="${DATA_DIR}/${f}"
-    if [[ -f "$src" ]]; then
-        FILES_TO_BACKUP+=("$src")
-        info "Queued: $src"
-    else
-        info "WARNING: $src not found, skipping."
-    fi
+# A leftover .tmp from a crashed run must never be mistaken for a backup.
+trap 'rm -f -- "${TMP_ARCHIVE}"' EXIT
+
+[[ -f "${DATA_DIR}/${MAIN_CSV}" ]] || die "Required file not found: ${DATA_DIR}/${MAIN_CSV}"
+for f in settings.json saved_filters.json; do
+    [[ -f "${DATA_DIR}/${f}" ]] || info "WARNING: ${DATA_DIR}/${f} not found, it will not be in this backup."
 done
 
-[[ ${#FILES_TO_BACKUP[@]} -eq 0 ]] && die "No runtime data files found to back up."
+tar -czf "${TMP_ARCHIVE}" -C "${ROOT_DIR}" \
+    --exclude='data/.gitkeep' --exclude='data/*.tmp' --exclude='data/*.lock' \
+    data
 
-tar -czf "${ARCHIVE}" -C "${ROOT_DIR}" \
-    $(for f in "${FILES_TO_BACKUP[@]}"; do echo "${f#$ROOT_DIR/}"; done)
+# --- self-check: refuse to promote an archive we could not read back ---------
+members="$(tar -tzf "${TMP_ARCHIVE}")" || die "Archive is unreadable: ${TMP_ARCHIVE}"
+grep -qx "data/${MAIN_CSV}" <<<"${members}" || die "Archive is missing data/${MAIN_CSV}"
+src_header="$(head -n 1 "${DATA_DIR}/${MAIN_CSV}")"
+# sed, not head: head exits after line 1, tar then dies of SIGPIPE, and pipefail
+# would turn that into a failed backup for any CSV larger than the pipe buffer.
+arc_header="$(tar -xzOf "${TMP_ARCHIVE}" "data/${MAIN_CSV}" | sed -n '1p')" \
+    || die "Could not read data/${MAIN_CSV} back out of the archive"
+[[ -n "${arc_header}" && "${arc_header}" == "${src_header}" ]] \
+    || die "Archived ${MAIN_CSV} header does not match the source (empty or truncated copy)"
 
-CHECKSUM_FILE="${OUTPUT_DIR}/expense_tracker_data_${TIMESTAMP}.sha256"
-sha256sum "${ARCHIVE}" > "${CHECKSUM_FILE}"
+mv -- "${TMP_ARCHIVE}" "${ARCHIVE}"
 
+# Basename in the checksum file, so `sha256sum -c` works wherever the pair is
+# restored to (NAS, Google, a scratch dir) rather than only at the original path.
+( cd "${OUTPUT_DIR}" && sha256sum "${ARCHIVE_NAME}" > "${CHECKSUM_FILE}" && sha256sum -c --quiet "${CHECKSUM_FILE}" ) \
+    || die "Checksum verification failed for ${ARCHIVE}"
+
+# --- retention ---------------------------------------------------------------
 mapfile -t ARCHIVE_FILES < <(
     find "${OUTPUT_DIR}" -maxdepth 1 -type f -name 'expense_tracker_data_*.tar.gz' -printf '%f\n' | sort -r
 )
@@ -84,5 +114,6 @@ done
 
 info "Archive:  ${ARCHIVE}"
 info "Checksum: ${CHECKSUM_FILE}"
+info "Contents: $(grep -vc '/$' <<<"${members}") file(s) from data/"
 info "Retention: keeping latest ${RETENTION_COUNT} backup(s)."
 info "Backup complete."

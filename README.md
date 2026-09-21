@@ -254,24 +254,54 @@ docker compose down
 
 The project includes:
 
-- `scripts/data_backup.sh` for timestamped backups of runtime data files
+- `scripts/data_backup.sh` for timestamped backups of the whole `data/` folder
+- `scripts/setup_backup_cron.sh` to install the cron job
 - built-in retention, so old backups are pruned automatically
 
-By default, each run keeps only the latest 4 backup archives and checksums.
+Each run archives everything in `data/` — the main database, settings, saved
+filters **and the joint-account files** — to
+`expense_tracker_data_<timestamp>.tar.gz` plus a `.sha256`, self-checks the
+archive, and only then moves it into place. By default it keeps the latest 14.
 
-Install or update a cron job that runs every 4 days at 03:00:
+`.streamlit/secrets.toml` is deliberately **not** in the archive (the copy that
+reaches Google Drive must not carry credentials). Keep it in your password
+manager.
+
+Install or update the cron job (daily at 03:00; the defaults match the NUC):
 
 ```bash
 chmod +x scripts/setup_backup_cron.sh scripts/data_backup.sh
-./scripts/setup_backup_cron.sh /srv/shared/backups/expense_tracker 4 "0 3 */4 * *"
+./scripts/setup_backup_cron.sh                                 # /srv/shared/backups, keep 14, daily 03:00
+./scripts/setup_backup_cron.sh /srv/shared/backups 14 "0 3 * * *"   # same, explicit
 ```
 
 Notes:
 
-- Cron schedule `*/4` in day-of-month means every 4th day of each month.
-- Backup logs are written to `logs/data_backup_cron.log`.
+- Re-running the setup script replaces the existing job (including a hand-edited
+  crontab line that calls `data_backup.sh`), so you never end up with two.
+- Backup logs are written to `<output_dir>/expense_tracker_backup_cron.log`.
+- On the NUC the archives in `/srv/shared/backups` are then copied to Google Drive
+  (encrypted) and the Synology NAS by the sleepwell backup jobs — see that repo's
+  `docs/nuc-backup-overview.md`.
 - You can run a manual backup at any time:
 
 ```bash
-./scripts/data_backup.sh /srv/shared/backups/expense_tracker 4
+./scripts/data_backup.sh /srv/shared/backups 14
 ```
+
+The backup scripts have hermetic tests (temp dirs and a stub `crontab` only): `scripts/tests/test_data_backup.sh`.
+
+### Restoring
+
+```bash
+cd /srv/shared/backups                       # or wherever the archive was fetched to
+sha256sum -c expense_tracker_data_<timestamp>.sha256
+docker stop uk_expense_tracker               # stop the app first so it cannot overwrite the restore
+tar -xzf expense_tracker_data_<timestamp>.tar.gz -C /srv/UK-Expense-Tracker
+docker start uk_expense_tracker
+```
+
+(`uk_expense_tracker` is the container name on the NUC; elsewhere use whatever
+`docker compose down` / `up -d` you normally run.) Restored files may need their
+original owner re-applied — the joint-account files are written by the container
+as root.
