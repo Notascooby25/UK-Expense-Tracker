@@ -722,10 +722,11 @@ if app_page == "📝 Add & Sync":
     if not st.session_state.new_sync_rows.empty:
         st.info(f"✨ Found {len(st.session_state.new_sync_rows)} new items.")
         with st.expander(" Review & Edit New Data", expanded=True):
-            st.caption("You can click the Category column below to edit it before saving. Type to search.")
+            st.caption("You can click the Category or Notes columns below to edit them before saving. Type to search categories.")
             editor_format = table_format.copy()
             editor_format["Category"] = st.column_config.SelectboxColumn("Category", options=master_cats)
-            disabled_cols = [c for c in COLS if c != "Category"]
+            editor_format["Notes"] = st.column_config.TextColumn("Notes")
+            disabled_cols = [c for c in COLS if c not in ["Category", "Notes"]]
             
             edited_new_rows = st.data_editor(
                 st.session_state.new_sync_rows,
@@ -739,14 +740,21 @@ if app_page == "📝 Add & Sync":
                 for idx, row in edited_new_rows.iterrows():
                     old_cat = st.session_state.new_sync_rows.loc[idx, 'Category']
                     new_cat = row['Category']
-                    if old_cat != new_cat:
+                    old_notes = st.session_state.new_sync_rows.loc[idx, 'Notes']
+                    new_notes = row['Notes']
+                    
+                    if old_cat != new_cat or old_notes != new_notes:
                         mask = (st.session_state.df['Date'] == row['Date']) & \
                                (st.session_state.df['Name'] == row['Name']) & \
                                (st.session_state.df['Amount'] == row['Amount']) & \
                                (st.session_state.df['Category'] == old_cat)
+                        
                         if mask.any():
                             match_idx = st.session_state.df[mask].index[-1]
-                            st.session_state.df.loc[match_idx, 'Category'] = new_cat
+                            if old_cat != new_cat:
+                                st.session_state.df.loc[match_idx, 'Category'] = new_cat
+                            if old_notes != new_notes:
+                                st.session_state.df.loc[match_idx, 'Notes'] = new_notes
                             
                 st.session_state.new_sync_rows = edited_new_rows
                 st.rerun()
