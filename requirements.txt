@@ -3,3 +3,4 @@ pandas
 plotly
 st-gsheets-connection
 Pillow
+streamlit-cookies-controller

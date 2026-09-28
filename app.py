@@ -8,6 +8,7 @@ import json
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 import difflib
+from streamlit_cookies_controller import CookieController
 
 # Internal movement categories & True Income
 internal_categories = ["Savings", "Investments - ISA", "Investment - ISA", "Transfers", "Investment - Crypto"]
@@ -195,8 +196,12 @@ def get_auth_credentials():
     return DEV_FALLBACK_USER, DEV_FALLBACK_PASS, "Development fallback auth is active because [auth] secrets are not set."
 
 # --- Login & Authentication ---
+cookie_controller = CookieController()
 if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
+    if cookie_controller.get('uk_expense_auth') == 'true':
+        st.session_state.authenticated = True
+    else:
+        st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
     if os.path.exists(LOGO_FILE):
@@ -218,6 +223,7 @@ if not st.session_state.authenticated:
         if st.form_submit_button("Login"):
             if username == valid_user and password == valid_pass:
                 st.session_state.authenticated = True
+                cookie_controller.set('uk_expense_auth', 'true', max_age=90*24*60*60) # 90 days
                 st.rerun()
             else:
                 st.error("Incorrect username or password.")
@@ -679,8 +685,15 @@ with st.sidebar:
             st.toast(f"✅ Added {new_cat}")
             save_database(show_success=False)
             st.rerun()
+            
+        if st.button("🧹 Clear App Cache", use_container_width=True):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            st.toast("✅ Streamlit cache cleared!")
+            
         if st.button("Log Out", use_container_width=True):
             st.session_state.authenticated = False
+            cookie_controller.remove('uk_expense_auth')
             st.rerun()
 
 # --- MAIN APP HEADER ---
@@ -719,8 +732,7 @@ if app_page == "📝 Add & Sync":
                 use_container_width=True,
                 hide_index=True,
                 column_config=editor_format,
-                disabled=disabled_cols,
-                key="new_data_editor"
+                disabled=disabled_cols
             )
             
             if not edited_new_rows.equals(st.session_state.new_sync_rows):
