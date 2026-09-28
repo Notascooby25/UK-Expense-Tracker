@@ -20,6 +20,8 @@ services:
     command: --label-enable --cleanup --interval 300
     environment:
       - DOCKER_API_VERSION=1.40
+      - REPO_USER=${GHCR_USER}
+      - REPO_PASS=${GHCR_PAT}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
