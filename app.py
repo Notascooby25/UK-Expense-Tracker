@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -689,92 +689,128 @@ if os.path.exists(LOGO_FILE):
     with head_col2:
         st.image(LOGO_FILE, use_container_width=True)
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([" Add & Sync", " Dashboard", " Intelligence", "⚙️ Data Editor", " Export", " Internal Tracking"])
+st.sidebar.markdown("---")
+app_page = st.sidebar.radio("📱 Navigation", [
+    "📝 Add & Sync", 
+    "📊 Dashboard", 
+    "🧠 Intelligence", 
+    "⚙️ Data Editor", 
+    "📤 Export", 
+    "🏦 Internal Tracking"
+])
 
 table_format = {
     "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
     "Amount": st.column_config.NumberColumn("Amount", format="£%.2f")
 }
 
-# === TAB 1: ADD & SYNC ===
-with tab1:
+# === PAGE 1: ADD & SYNC ===
+if app_page == "📝 Add & Sync":
     if not st.session_state.new_sync_rows.empty:
         st.info(f"✨ Found {len(st.session_state.new_sync_rows)} new items.")
-        with st.expander(" Review New Data", expanded=True):
-            st.dataframe(st.session_state.new_sync_rows, use_container_width=True, hide_index=True, column_config=table_format)
+        with st.expander(" Review & Edit New Data", expanded=True):
+            st.caption("You can click the Category column below to edit it before saving. Type to search.")
+            editor_format = table_format.copy()
+            editor_format["Category"] = st.column_config.SelectboxColumn("Category", options=master_cats)
+            disabled_cols = [c for c in COLS if c != "Category"]
+            
+            edited_new_rows = st.data_editor(
+                st.session_state.new_sync_rows,
+                use_container_width=True,
+                hide_index=True,
+                column_config=editor_format,
+                disabled=disabled_cols,
+                key="new_data_editor"
+            )
+            
+            if not edited_new_rows.equals(st.session_state.new_sync_rows):
+                for idx, row in edited_new_rows.iterrows():
+                    old_cat = st.session_state.new_sync_rows.loc[idx, 'Category']
+                    new_cat = row['Category']
+                    if old_cat != new_cat:
+                        mask = (st.session_state.df['Date'] == row['Date']) & \
+                               (st.session_state.df['Name'] == row['Name']) & \
+                               (st.session_state.df['Amount'] == row['Amount']) & \
+                               (st.session_state.df['Category'] == old_cat)
+                        if mask.any():
+                            match_idx = st.session_state.df[mask].index[-1]
+                            st.session_state.df.loc[match_idx, 'Category'] = new_cat
+                            
+                st.session_state.new_sync_rows = edited_new_rows
+                st.rerun()
+
             if st.button("Clear Preview"):
                 st.session_state.new_sync_rows = pd.DataFrame(columns=COLS)
                 st.rerun()
 
-    st.subheader(" Sync & Import")
-    col_left, col_right = st.columns(2)
-    
-    with col_left:
-        st.markdown("**Google Sheets Sync**")
-        s_url = st.text_input("Monzo Sheet URL:", value=st.session_state.app_settings.get("monzo_sheet_url", ""))
-        s_worksheet = st.text_input(
-            "Worksheet name:",
-            value=st.session_state.app_settings.get("monzo_sheet_worksheet", "")
-        )
-        if st.button("Sync Now", type="primary"):
-            if s_url:
-                with st.spinner("Fetching Live Data..."):
-                    st.session_state.app_settings["monzo_sheet_url"] = s_url
-                    st.session_state.app_settings["monzo_sheet_worksheet"] = s_worksheet.strip() or st.session_state.app_settings["monzo_sheet_worksheet"]
-                    conn = st.connection("gsheets", type=GSheetsConnection)
-                    df_s = conn.read(
-                        spreadsheet=s_url,
-                        worksheet=st.session_state.app_settings["monzo_sheet_worksheet"],
-                        ttl=0
-                    )
-                    process_new_data(df_s, "Monzo")
-                    st.rerun()
-                
-        st.divider()
-        st.markdown("**Manual File Upload**")
-        up_bank = st.selectbox("Bank Format:", ["Auto-Detect", "Monzo", "HSBC", "Barclaycard"])
-        up = st.file_uploader("Upload CSV", type=['csv'])
-        if up and st.button("Process File"):
-            hdr = None if up_bank == "Barclaycard" else 0
-            process_new_data(pd.read_csv(up, header=hdr), up_bank)
+    st.subheader(" Quick Add Transaction")
+    with st.form("man_entry", clear_on_submit=True):
+        m_d = st.date_input("Date")
+        m_n = st.text_input("Name (Merchant / Person)")
+        m_a = st.number_input("Amount (£)", step=0.01)
+        m_t = st.radio("Type", ["Expense", "Income"], horizontal=True)
+        m_c = st.selectbox("Category", master_cats)
+        if st.form_submit_button("Add Transaction", use_container_width=True):
+            process_new_data(pd.DataFrame([{'Date': pd.to_datetime(m_d).normalize(), 'Name': m_n, 'Amount': m_a, 'Transaction_Type': m_t, 'Bank': 'Manual', 'Category': m_c}]))
             st.rerun()
-
-    with col_right:
-        st.markdown("**Paste Data**")
-        p_bank = st.selectbox("Paste Format:", ["Auto-Detect", "Monzo", "HSBC", "Barclaycard"], key="p_bank")
-        p_data = st.text_area("Paste spreadsheet rows (including headers):", height=150)
-        if st.button("Process Paste"):
-            if p_data:
-                try:
-                    hdr_p = None if p_bank == "Barclaycard" else 0
-                    df_p = pd.read_csv(io.StringIO(p_data), sep='\t', header=hdr_p)
-                    if len(df_p.columns) < 2: 
-                        df_p = pd.read_csv(io.StringIO(p_data), sep=',', header=hdr_p)
-                    process_new_data(df_p, p_bank)
-                    st.rerun()
-                except Exception as e: st.error(f"Paste Error: {e}")
-
-        st.divider()
-        st.markdown("**Manual Entry**")
-        with st.form("man_entry", clear_on_submit=True):
-            m_d = st.date_input("Date")
-            m_n = st.text_input("Name")
-            m_a = st.number_input("Amount (£)", step=0.01)
-            m_t = st.radio("Type", ["Expense", "Income"], horizontal=True)
-            m_c = st.selectbox("Category", master_cats)
-            if st.form_submit_button("Add Transaction"):
-                process_new_data(pd.DataFrame([{'Date': pd.to_datetime(m_d).normalize(), 'Name': m_n, 'Amount': m_a, 'Transaction_Type': m_t, 'Bank': 'Manual', 'Category': m_c}]))
-                st.rerun()
-                
+            
     if st.session_state.unsaved_sync:
-        st.warning("⚠️ You have newly synced data that hasn't been saved yet.")
+        st.warning("⚠️ You have newly added data that hasn't been saved yet.")
         if st.button(" Save New Transactions to Disk", type="primary", use_container_width=True):
             save_database()
             st.session_state.unsaved_sync = False
             st.rerun()
 
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("Bulk Import Tools (CSV, Sheets, Paste)"):
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.markdown("**Google Sheets Sync**")
+            s_url = st.text_input("Monzo Sheet URL:", value=st.session_state.app_settings.get("monzo_sheet_url", ""))
+            s_worksheet = st.text_input(
+                "Worksheet name:",
+                value=st.session_state.app_settings.get("monzo_sheet_worksheet", "")
+            )
+            if st.button("Sync Now", type="primary"):
+                if s_url:
+                    with st.spinner("Fetching Live Data..."):
+                        st.session_state.app_settings["monzo_sheet_url"] = s_url
+                        st.session_state.app_settings["monzo_sheet_worksheet"] = s_worksheet.strip() or st.session_state.app_settings["monzo_sheet_worksheet"]
+                        conn = st.connection("gsheets", type=GSheetsConnection)
+                        df_s = conn.read(
+                            spreadsheet=s_url,
+                            worksheet=st.session_state.app_settings["monzo_sheet_worksheet"],
+                            ttl=0
+                        )
+                        process_new_data(df_s, "Monzo")
+                        st.rerun()
+                    
+            st.divider()
+            st.markdown("**Manual File Upload**")
+            up_bank = st.selectbox("Bank Format:", ["Auto-Detect", "Monzo", "HSBC", "Barclaycard"])
+            up = st.file_uploader("Upload CSV", type=['csv'])
+            if up and st.button("Process File"):
+                hdr = None if up_bank == "Barclaycard" else 0
+                process_new_data(pd.read_csv(up, header=hdr), up_bank)
+                st.rerun()
+
+        with col_right:
+            st.markdown("**Paste Data**")
+            p_bank = st.selectbox("Paste Format:", ["Auto-Detect", "Monzo", "HSBC", "Barclaycard"], key="p_bank")
+            p_data = st.text_area("Paste spreadsheet rows (including headers):", height=150)
+            if st.button("Process Paste"):
+                if p_data:
+                    try:
+                        hdr_p = None if p_bank == "Barclaycard" else 0
+                        df_p = pd.read_csv(io.StringIO(p_data), sep='\t', header=hdr_p)
+                        if len(df_p.columns) < 2: 
+                            df_p = pd.read_csv(io.StringIO(p_data), sep=',', header=hdr_p)
+                        process_new_data(df_p, p_bank)
+                        st.rerun()
+                    except Exception as e: st.error(f"Paste Error: {e}")
+
 # === TAB 2: DASHBOARD ===
-with tab2:
+elif app_page == "📊 Dashboard":
     if not st.session_state.df.empty:
         import plotly.graph_objects as go 
         
@@ -806,63 +842,64 @@ with tab2:
         df_v['Spend_Type'] = df_v.apply(assign_spend_type, axis=1)
 
         # --- FILTERS ---
-        if st.button(" Reset Dashboard Filters", key="reset_dash"):
-            st.session_state['dash_hide_int'] = True
-            st.session_state['dash_net_spend'] = False
-            st.session_state['dash_year_mode'] = "Financial Year"
-            st.session_state['dash_sel_year'] = "All"
-            st.session_state['dash_sel_bank'] = "All Banks"
-            st.session_state['dash_incl'] = []
-            st.session_state['dash_excl'] = []
-            if 'dash_months' in st.session_state: st.session_state['dash_months'] = []
-            st.rerun()
+        with st.expander("⚙️ Adjust Dashboard Filters"):
+            if st.button(" Reset Dashboard Filters", key="reset_dash"):
+                st.session_state['dash_hide_int'] = True
+                st.session_state['dash_net_spend'] = False
+                st.session_state['dash_year_mode'] = "Financial Year"
+                st.session_state['dash_sel_year'] = "All"
+                st.session_state['dash_sel_bank'] = "All Banks"
+                st.session_state['dash_incl'] = []
+                st.session_state['dash_excl'] = []
+                if 'dash_months' in st.session_state: st.session_state['dash_months'] = []
+                st.rerun()
+                
+            top_col1, top_col2 = st.columns(2)
+            hide_internal = top_col1.checkbox("Hide Internal Movements", value=st.session_state.get('dash_hide_int', True), key="dash_hide_int")
+            net_spend_mode = top_col2.checkbox("Net Spend Only Mode", value=st.session_state.get('dash_net_spend', False), key="dash_net_spend")
             
-        top_col1, top_col2 = st.columns(2)
-        hide_internal = top_col1.checkbox("Hide Internal Movements", value=st.session_state.get('dash_hide_int', True), key="dash_hide_int")
-        net_spend_mode = top_col2.checkbox("Net Spend Only Mode", value=st.session_state.get('dash_net_spend', False), key="dash_net_spend")
-        
-        if hide_internal: 
-            cats_to_hide = [c for c in internal_categories if c not in committed_cats]
-            df_v = df_v[~df_v['Category'].isin(cats_to_hide)]
-            
-        if net_spend_mode: df_v = df_v[df_v['Transaction_Type'] == 'Expense']
+            if hide_internal: 
+                cats_to_hide = [c for c in internal_categories if c not in committed_cats]
+                df_v = df_v[~df_v['Category'].isin(cats_to_hide)]
+                
+            if net_spend_mode: df_v = df_v[df_v['Transaction_Type'] == 'Expense']
 
-        fc1, fc2, fc3 = st.columns(3)
-        year_type = fc1.radio("Time Mode", ["Financial Year", "Calendar Year", "Rolling Period"], horizontal=True, key="dash_year_mode")
-        
-        rolling_options = {"Last 3 Months": 3, "Last 6 Months": 6, "Last 12 Months": 12, "Last 18 Months": 18, "Last 2 Years": 24}
-        
-        if year_type == "Rolling Period":
-            sel_year = fc2.selectbox("Select Timeframe", list(rolling_options.keys()), key="dash_sel_year")
-            months_to_look_back = rolling_options.get(sel_year, 3) 
-            cutoff = pd.Timestamp.now().normalize() - pd.DateOffset(months=months_to_look_back)
-            df_v = df_v[df_v['Date'] >= cutoff]
-        else:
-            target_col = 'Calendar_Year' if year_type == "Calendar Year" else 'Financial_Year'
-            all_years = ['All'] + sorted(list(df_v[target_col].dropna().unique()))
-            sel_year = fc2.selectbox("Select Year", all_years, key="dash_sel_year")
-            if sel_year != 'All': 
-                df_v = df_v[df_v[target_col] == sel_year]
-                
-        all_dash_banks = ['All Banks'] + master_banks
-        sel_dash_bank = fc3.selectbox("Bank", all_dash_banks, key="dash_sel_bank")
-        if sel_dash_bank != 'All Banks': df_v = df_v[df_v['Bank'] == sel_dash_bank]
-        
-        fc4, fc5, fc6 = st.columns(3)
-        with fc4:
-            if year_type == "Calendar Year":
-                month_names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-                sel_months = st.multiselect("Specific Months", month_names, key="dash_months")
-                if sel_months: df_v = df_v[df_v['Date'].dt.strftime('%B').isin(sel_months)]
-            else: st.write("") 
-                
-        with fc5:
-            incl = st.multiselect("Specific Categories (Include)", master_cats, key="dash_incl")
-            if incl: df_v = df_v[df_v['Category'].isin(incl)]
+            fc1, fc2, fc3 = st.columns(3)
+            year_type = fc1.radio("Time Mode", ["Financial Year", "Calendar Year", "Rolling Period"], horizontal=True, key="dash_year_mode")
             
-        with fc6:
-            excl = st.multiselect("Categories to Exclude", master_cats, key="dash_excl")
-            if excl: df_v = df_v[~df_v['Category'].isin(excl)]
+            rolling_options = {"Last 3 Months": 3, "Last 6 Months": 6, "Last 12 Months": 12, "Last 18 Months": 18, "Last 2 Years": 24}
+        
+            if year_type == "Rolling Period":
+                sel_year = fc2.selectbox("Select Timeframe", list(rolling_options.keys()), key="dash_sel_year")
+                months_to_look_back = rolling_options.get(sel_year, 3) 
+                cutoff = pd.Timestamp.now().normalize() - pd.DateOffset(months=months_to_look_back)
+                df_v = df_v[df_v['Date'] >= cutoff]
+            else:
+                target_col = 'Calendar_Year' if year_type == "Calendar Year" else 'Financial_Year'
+                all_years = ['All'] + sorted(list(df_v[target_col].dropna().unique()))
+                sel_year = fc2.selectbox("Select Year", all_years, key="dash_sel_year")
+                if sel_year != 'All': 
+                    df_v = df_v[df_v[target_col] == sel_year]
+                    
+            all_dash_banks = ['All Banks'] + master_banks
+            sel_dash_bank = fc3.selectbox("Bank", all_dash_banks, key="dash_sel_bank")
+            if sel_dash_bank != 'All Banks': df_v = df_v[df_v['Bank'] == sel_dash_bank]
+            
+            fc4, fc5, fc6 = st.columns(3)
+            with fc4:
+                if year_type == "Calendar Year":
+                    month_names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+                    sel_months = st.multiselect("Specific Months", month_names, key="dash_months")
+                    if sel_months: df_v = df_v[df_v['Date'].dt.strftime('%B').isin(sel_months)]
+                else: st.write("") 
+                    
+            with fc5:
+                incl = st.multiselect("Specific Categories (Include)", master_cats, key="dash_incl")
+                if incl: df_v = df_v[df_v['Category'].isin(incl)]
+                
+            with fc6:
+                excl = st.multiselect("Categories to Exclude", master_cats, key="dash_excl")
+                if excl: df_v = df_v[~df_v['Category'].isin(excl)]
 
         # --- METRICS CALCULATIONS (Refund Adjusted) ---
         inc = df_v[df_v['Spend_Type']=='True Income']['Amount'].sum()
@@ -1017,7 +1054,7 @@ with tab2:
         st.dataframe(display_df, use_container_width=True, column_config=table_format, height=400)
 
 # === TAB 3: CATEGORY INTELLIGENCE ===
-with tab3:
+elif app_page == "🧠 Intelligence":
     st.subheader(" Category Intelligence")
     if not st.session_state.df.empty:
         other_bank_df = st.session_state.df[st.session_state.df['Bank'] != 'Monzo']
@@ -1068,7 +1105,7 @@ with tab3:
             st.info("No alignment issues found. Your data is perfectly mapped!")
 
 # === TAB 4: DATA EDITOR & BULK EDIT ===
-with tab4:
+elif app_page == "⚙️ Data Editor":
     st.subheader("⚙️ Data Editor & Bulk Operations")
     
     if st.button(" Reset Editor Filters", key="reset_editor"):
@@ -1169,7 +1206,7 @@ with tab4:
                         st.warning("No rows selected.")
 
 # === TAB 5: EXPORT ===
-with tab5:
+elif app_page == "📤 Export":
     st.subheader(" Advanced Export")
     
     if 'export_presets' not in st.session_state:
@@ -1261,7 +1298,7 @@ with tab5:
             st.warning("No transactions match these exact filters.")
 
 # === TAB 6: INTERNAL TRACKING ===
-with tab6:
+elif app_page == "🏦 Internal Tracking":
     st.subheader(" Internal Wealth Movements")
     if not st.session_state.df.empty:
         internal_df = st.session_state.df[st.session_state.df['Category'].isin(internal_categories)].copy()
