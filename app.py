@@ -987,15 +987,15 @@ elif app_page == "📊 Dashboard":
         st.divider()
         
         # --- CHART TOGGLES ---
-        st.write("### ️ Chart Visibility Toggles")
-        t_col1, t_col2, t_col3, t_col4, t_col5 = st.columns(5)
-        show_monthly = t_col1.toggle(" Monthly Cash Flow", value=True)
-        show_cumulative = t_col2.toggle(" Cumulative Wealth", value=False)
-        show_categories = t_col3.toggle("️ Top Categories", value=True)
-        show_merchants = t_col4.toggle(" Top 10 Merchants", value=False)
-        show_sunburst = t_col5.toggle(" Category Sunburst", value=False)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("⚙️ Chart Visibility Toggles", expanded=False):
+            t_row1_1, t_row1_2, t_row1_3 = st.columns(3)
+            show_monthly = t_row1_1.toggle(" Monthly Cash Flow", value=True)
+            show_cumulative = t_row1_2.toggle(" Cumulative Wealth", value=False)
+            show_categories = t_row1_3.toggle("️ Top Categories", value=True)
+            
+            t_row2_1, t_row2_2 = st.columns(2)
+            show_merchants = t_row2_1.toggle(" Top 10 Merchants", value=False)
+            show_sunburst = t_row2_2.toggle(" Category Sunburst", value=False)
 
         charts_to_show = []
         if show_monthly: charts_to_show.append('monthly')
@@ -1022,6 +1022,7 @@ elif app_page == "📊 Dashboard":
                             
                             fig_bar.update_layout(title='Monthly Cash Flow (Baseline vs Lifestyle)', barmode='group', xaxis_title="Month", yaxis_title="Amount (£)")
                             st.plotly_chart(fig_bar, use_container_width=True)
+                            st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the Data Editor tab)*")
                             
                             with st.expander("ℹ️ What does this chart show?"):
                                 st.caption("Compares your **True Income** (green) against your expenses. Your **Variable Lifestyle** (orange) sits stacked on top of your **Committed Baseline** (red) so you can easily see if your total outbound cash exceeded your income for the month.")
@@ -1032,6 +1033,7 @@ elif app_page == "📊 Dashboard":
                             fig_cum = px.line(df_daily, x='Date', y='Cumulative', title='Cumulative Wealth Trajectory')
                             fig_cum.update_traces(line_color='#3498db', fill='tozeroy')
                             st.plotly_chart(fig_cum, use_container_width=True)
+                            st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the Data Editor tab)*")
                             
                             with st.expander("ℹ️ What does this chart show?"):
                                 st.caption("Tracks your Net Flow (Income minus Expenses) day by day. An **upward trend** means you are retaining cash and building wealth. A **downward trend** means you are spending more than you earn.")
@@ -1043,6 +1045,7 @@ elif app_page == "📊 Dashboard":
                             fig_cat.update_layout(yaxis={'categoryorder':'total ascending'})
                             fig_cat.update_traces(marker_color='#9b59b6')
                             st.plotly_chart(fig_cat, use_container_width=True)
+                            st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the Data Editor tab)*")
                             
                             with st.expander("ℹ️ What does this chart show?"):
                                 st.caption("Ranks your highest spending categories. This strictly isolates your **Expenses** (actively ignoring internal transfers and income) to show you exactly where the bulk of your money is going.")
@@ -1054,6 +1057,7 @@ elif app_page == "📊 Dashboard":
                             fig_merch.update_layout(yaxis={'categoryorder':'total ascending'})
                             fig_merch.update_traces(marker_color='#e67e22')
                             st.plotly_chart(fig_merch, use_container_width=True)
+                            st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the Data Editor tab)*")
                             
                             with st.expander("ℹ️ What does this chart show?"):
                                 st.caption("Highlights the specific shops, services, or merchants taking the biggest chunk of your money. This is incredibly helpful for spotting expensive habits or costly subscriptions.")
@@ -1064,6 +1068,7 @@ elif app_page == "📊 Dashboard":
                             exp_df = exp_df[exp_df['Amount'] > 0]
                             fig_sun = px.sunburst(exp_df, path=['Bank', 'Category'], values='Amount', title='Expense Breakdown (Bank > Category)')
                             st.plotly_chart(fig_sun, use_container_width=True)
+                            st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the Data Editor tab)*")
                             
                             with st.expander("ℹ️ How to use this chart"):
                                 st.caption("A multi-level, interactive view of your spending. **Click on any slice** (like a specific Bank) to zoom in and see exactly which categories make up that slice. Click the center circle to zoom back out!")
@@ -1189,12 +1194,15 @@ elif app_page == "⚙️ Data Editor":
                 st.toast(" Database successfully saved to disk!")
 
         else:
-            b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
-            b_bank = b_col1.selectbox("Filter Bank", ["All"] + master_banks, key="bulk_bank")
-            b_cat = b_col2.selectbox("Filter Category", ["All"] + master_cats, key="bulk_cat")
-            b_name = b_col3.text_input("Merchant Name contains", "", key="bulk_name")
-            b_date = b_col4.date_input("Date Range", [], key="bulk_date")
-            b_notes = b_col5.text_input("Notes contains", "", key="bulk_notes")
+            with st.expander("⚙️ Bulk Edit Filters", expanded=True):
+                b_row1_1, b_row1_2, b_row1_3 = st.columns(3)
+                b_bank = b_row1_1.selectbox("Filter Bank", ["All"] + master_banks, key="bulk_bank")
+                b_cat = b_row1_2.selectbox("Filter Category", ["All"] + master_cats, key="bulk_cat")
+                b_name = b_row1_3.text_input("Merchant Name contains", "", key="bulk_name")
+                
+                b_row2_1, b_row2_2 = st.columns(2)
+                b_date = b_row2_1.date_input("Date Range", [], key="bulk_date")
+                b_notes = b_row2_2.text_input("Notes contains", "", key="bulk_notes")
             
             bulk_df = st.session_state.df.copy()
             if b_bank != "All": bulk_df = bulk_df[bulk_df['Bank'] == b_bank]
@@ -1345,6 +1353,7 @@ elif app_page == "🏦 Internal Tracking":
                 int_summary = internal_df.groupby(['Month_Year', 'Category'])['Amount'].sum().reset_index()
                 fig_int = px.bar(int_summary, x='Month_Year', y='Amount', color='Category', barmode='stack', title="Internal Flow Timeline")
                 st.plotly_chart(fig_int, use_container_width=True)
+                st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the table below)*")
                 
                 display_int_df = internal_df.drop(columns=['Month_Year']).sort_values('Date', ascending=False)
                 st.dataframe(display_int_df, use_container_width=True, column_config=table_format)
