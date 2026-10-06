@@ -1020,11 +1020,15 @@ elif app_page == "📊 Dashboard":
         
         with bd_col1:
             st.markdown("**💰 Income Streams**")
-            inc_df = df_v[df_v['Spend_Type'] == 'True Income'].groupby('Category')['Amount'].sum() / months_in_period
-            if not inc_df.empty:
-                inc_df = inc_df.reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
-                inc_df['Avg P/M (£)'] = inc_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
-                st.dataframe(inc_df, hide_index=True, use_container_width=True)
+            inc_data = df_v[df_v['Spend_Type'] == 'True Income']
+            if not inc_data.empty:
+                for cat, grp in inc_data.groupby('Category'):
+                    cat_sum = grp['Amount'].sum() / months_in_period
+                    if cat_sum > 0:
+                        st.markdown(f"**{cat}: £{cat_sum:,.2f}**")
+                        merch_grp = grp.groupby('Name')['Amount'].sum() / months_in_period
+                        for m, val in merch_grp.items():
+                            st.caption(f"&nbsp;&nbsp;&nbsp;• {m}: £{val:,.2f}")
             else:
                 st.caption("No income recorded.")
                 
@@ -1058,16 +1062,27 @@ elif app_page == "📊 Dashboard":
                 
         with bd_col4:
             st.markdown("**🏦 Savings & Transfers**")
-            # For internal transfers, a positive Net means money moved OUT of your main spending pool into savings.
-            int_exp = df_v[(df_v['Spend_Type'] == 'Internal Transfer') & (df_v['Transaction_Type'] == 'Expense')].groupby('Category')['Amount'].sum()
-            int_inc = df_v[(df_v['Spend_Type'] == 'Internal Transfer') & (df_v['Transaction_Type'] == 'Income')].groupby('Category')['Amount'].sum()
-            int_df = (int_exp.add(-int_inc, fill_value=0) / months_in_period).reset_index().rename(columns={'Amount': 'Net Flow P/M (£)'})
-            int_df = int_df[int_df['Net Flow P/M (£)'] != 0]
-            
-            if not int_df.empty:
-                int_df = int_df.sort_values(by='Net Flow P/M (£)', ascending=False)
-                int_df['Net Flow P/M (£)'] = int_df['Net Flow P/M (£)'].apply(lambda x: f"£{x:,.2f}")
-                st.dataframe(int_df, hide_index=True, use_container_width=True)
+            int_data = df_v[df_v['Spend_Type'] == 'Internal Transfer']
+            if not int_data.empty:
+                cats_found = 0
+                for cat, grp in int_data.groupby('Category'):
+                    cat_exp = grp[grp['Transaction_Type'] == 'Expense']['Amount'].sum()
+                    cat_inc = grp[grp['Transaction_Type'] == 'Income']['Amount'].sum()
+                    cat_net = (cat_exp - cat_inc) / months_in_period
+                    
+                    if cat_net != 0:
+                        cats_found += 1
+                        st.markdown(f"**{cat}: £{cat_net:,.2f}**")
+                        merch_exp = grp[grp['Transaction_Type'] == 'Expense'].groupby('Name')['Amount'].sum()
+                        merch_inc = grp[grp['Transaction_Type'] == 'Income'].groupby('Name')['Amount'].sum()
+                        merch_net = (merch_exp.add(-merch_inc, fill_value=0) / months_in_period)
+                        
+                        for m, val in merch_net.items():
+                            if val != 0:
+                                st.caption(f"&nbsp;&nbsp;&nbsp;• {m}: £{val:,.2f}")
+                                
+                if cats_found == 0:
+                    st.caption("No net internal transfers found.")
             else:
                 st.caption("No internal transfers found.")
 
