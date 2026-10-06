@@ -44,6 +44,7 @@ def build_runtime_paths(account_scope):
         os.path.join(DATA_DIR, get_scoped_filename(BASE_DB_FILENAME, account_scope)),
         os.path.join(DATA_DIR, get_scoped_filename(BASE_SETTINGS_FILENAME, account_scope)),
         os.path.join(DATA_DIR, get_scoped_filename(BASE_FILTER_FILENAME, account_scope)),
+        os.path.join(DATA_DIR, get_scoped_filename("assets.json", account_scope)),
     )
 
 
@@ -252,7 +253,7 @@ if selected_scope != st.session_state.active_account_scope:
     st.session_state.pop("export_presets", None)
     st.rerun()
 
-DB_FILE, SETTINGS_FILE, FILTER_FILE = build_runtime_paths(st.session_state.active_account_scope)
+DB_FILE, SETTINGS_FILE, FILTER_FILE, ASSETS_FILE = build_runtime_paths(st.session_state.active_account_scope)
 
 def build_startup_health():
     checks = [
@@ -709,7 +710,7 @@ app_page = st.sidebar.radio("📱 Navigation", [
     "🧠 Intelligence", 
     "⚙️ Data Editor", 
     "📤 Export", 
-    "🏦 Internal Tracking"
+    "🏦 Assets & Wealth"
 ])
 
 table_format = {
@@ -958,6 +959,18 @@ elif app_page == "📊 Dashboard":
         r3.metric(" Spare Cash /Mo", f"£{spare_cash:,.2f}", help="Income minus Baseline. Your true discretionary budget.")
         r4.metric("Avg Total Spend /Mo", f"£{avg_monthly:,.2f}", help="Your actual total average spending.")
 
+        # --- WHAT-IF CALCULATOR ---
+        with st.expander("📉 Wage Reduction 'What-If' Calculator", expanded=False):
+            st.caption("Test how a change in your income affects your discretionary budget, assuming your committed bills remain the same.")
+            wc1, wc2, wc3 = st.columns(3)
+            expected_salary = wc1.number_input("Hypothetical Monthly Income (£)", value=float(avg_income) if avg_income > 0 else 2000.0, step=100.0)
+            new_spare_cash = expected_salary - avg_baseline
+            wc2.metric("New Discretionary Budget", f"£{new_spare_cash:,.2f}", delta=f"£{new_spare_cash - spare_cash:,.2f} vs current")
+            if new_spare_cash < 0:
+                wc3.error("⚠️ Warning: Your committed bills exceed this hypothetical income!")
+            else:
+                wc3.success("✅ Your committed bills are covered.")
+
         # --- RECENT MONTH DELTA ANALYSIS ---
         st.write("###  Recent Month vs. Historical Average")
         if months_in_period >= 2:
@@ -983,6 +996,57 @@ elif app_page == "📊 Dashboard":
                 d3.success(f" **Insight:** Excellent! Your variable spending in {last_month} was **£{abs(diff):,.2f} lower** than your historical baseline.")
         else:
             st.info("Select a date range containing at least 2 months to see historical lifestyle creep analysis.")
+
+        st.divider()
+
+        # --- DETAILED SPREADSHEET-STYLE BREAKDOWN ---
+        st.markdown("### 📋 Detailed Cash Flow Breakdown (Monthly Averages)")
+        st.caption("A spreadsheet-style view of your Income, Committed Bills, Variable Spend, and Savings per month.")
+        
+        bd_col1, bd_col2, bd_col3, bd_col4 = st.columns(4)
+        
+        with bd_col1:
+            st.markdown("**💰 Income Streams**")
+            inc_df = df_v[df_v['Spend_Type'] == 'True Income'].groupby('Category')['Amount'].sum() / months_in_period
+            if not inc_df.empty:
+                inc_df = inc_df.reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
+                inc_df['Avg P/M (£)'] = inc_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
+                st.dataframe(inc_df, hide_index=True, use_container_width=True)
+            else:
+                st.caption("No income recorded.")
+                
+        with bd_col2:
+            st.markdown("**🔒 Committed Bills**")
+            com_df = df_v[df_v['Spend_Type'] == 'Committed Expense'].groupby('Category')['Amount'].sum() / months_in_period
+            if not com_df.empty:
+                com_df = com_df.reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
+                com_df = com_df.sort_values(by='Avg P/M (£)', ascending=False)
+                com_df['Avg P/M (£)'] = com_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
+                st.dataframe(com_df, hide_index=True, use_container_width=True)
+            else:
+                st.caption("No committed bills found.")
+                
+        with bd_col3:
+            st.markdown("**🍕 Variable Spend**")
+            var_df = df_v[df_v['Spend_Type'] == 'Variable Expense'].groupby('Category')['Amount'].sum() / months_in_period
+            if not var_df.empty:
+                var_df = var_df.reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
+                var_df = var_df.sort_values(by='Avg P/M (£)', ascending=False)
+                var_df['Avg P/M (£)'] = var_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
+                st.dataframe(var_df, hide_index=True, use_container_width=True)
+            else:
+                st.caption("No variable spend found.")
+                
+        with bd_col4:
+            st.markdown("**🏦 Savings & Transfers**")
+            int_df = df_v[df_v['Spend_Type'] == 'Internal Transfer'].groupby('Category')['Amount'].sum() / months_in_period
+            if not int_df.empty:
+                int_df = int_df.reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
+                int_df = int_df.sort_values(by='Avg P/M (£)', ascending=False)
+                int_df['Avg P/M (£)'] = int_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
+                st.dataframe(int_df, hide_index=True, use_container_width=True)
+            else:
+                st.caption("No internal transfers found.")
 
         st.divider()
         
@@ -1080,7 +1144,55 @@ elif app_page == "📊 Dashboard":
 
 # === TAB 3: CATEGORY INTELLIGENCE ===
 elif app_page == "🧠 Intelligence":
-    st.subheader(" Category Intelligence")
+    st.subheader("💡 Recurring Spend Detection")
+    st.caption("Automatically find merchants you pay regularly that aren't yet in your 'Committed' list.")
+    
+    if st.button("🔍 Scan for Recurring Bills"):
+        if not st.session_state.df.empty:
+            df_for_scan = st.session_state.df[st.session_state.df['Transaction_Type'] == 'Expense'].copy()
+            df_for_scan['Month_Year'] = df_for_scan['Date'].dt.to_period('M')
+            total_months = df_for_scan['Month_Year'].nunique()
+            
+            if total_months < 2:
+                st.warning("Need at least 2 months of data to detect recurrence.")
+            else:
+                merchant_stats = df_for_scan.groupby('Name').agg(
+                    frequency=('Month_Year', 'nunique'),
+                    avg_amount=('Amount', 'mean'),
+                    std_amount=('Amount', 'std'),
+                    category=('Category', 'first')
+                ).reset_index()
+                merchant_stats['std_amount'] = merchant_stats['std_amount'].fillna(0)
+                
+                candidates = []
+                for _, row in merchant_stats.iterrows():
+                    freq_ratio = row['frequency'] / total_months
+                    cv = row['std_amount'] / row['avg_amount'] if row['avg_amount'] > 0 else 0
+                    is_frequent = freq_ratio > 0.6 or (row['frequency'] >= 3 and total_months >= 3)
+                    is_stable = cv < 0.20
+                    
+                    cat = row['category']
+                    if cat not in st.session_state.app_settings.get("committed_categories", []) and cat not in internal_categories:
+                        if is_frequent and is_stable:
+                            candidates.append({
+                                'Merchant': row['Name'],
+                                'Category': cat,
+                                'Freq (Months)': row['frequency'],
+                                'Avg P/M (£)': f"£{row['avg_amount']:,.2f}"
+                            })
+                
+                if candidates:
+                    cand_df = pd.DataFrame(candidates).sort_values(by='Freq (Months)', ascending=False)
+                    st.success(f"Found {len(cand_df)} recurring candidates! Consider adding their categories to your Committed list.")
+                    st.dataframe(cand_df, hide_index=True, use_container_width=True)
+                else:
+                    st.info("No unflagged recurring bills found. You are fully optimized!")
+        else:
+            st.warning("No data available.")
+            
+    st.divider()
+    
+    st.subheader("🧹 Category Standardisation")
     if not st.session_state.df.empty:
         other_bank_df = st.session_state.df[st.session_state.df['Bank'] != 'Monzo']
         ignore_list = [str(x).lower().strip() for x in st.session_state.app_settings.get("ignore_suggestions", [])]
@@ -1325,9 +1437,88 @@ elif app_page == "📤 Export":
         else:
             st.warning("No transactions match these exact filters.")
 
-# === TAB 6: INTERNAL TRACKING ===
-elif app_page == "🏦 Internal Tracking":
-    st.subheader(" Internal Wealth Movements")
+# === TAB 6: ASSETS & WEALTH ===
+elif app_page == "🏦 Assets & Wealth":
+    st.subheader("🏦 Net Worth & Assets Tracker")
+    st.caption("Track the balances of your ISAs, savings, and investments over time.")
+    
+    # --- Load Assets ---
+    assets_data = {}
+    if os.path.exists(ASSETS_FILE):
+        try:
+            with open(ASSETS_FILE, "r", encoding="utf-8") as f:
+                assets_data = json.load(f)
+        except Exception:
+            assets_data = {}
+            
+    # Add new entry
+    with st.expander("➕ Log New Month Balances", expanded=len(assets_data)==0):
+        # Default to current month
+        default_month = pd.Timestamp.now().strftime('%Y-%m')
+        log_month = st.text_input("Month (YYYY-MM):", value=default_month)
+        
+        # We can dynamically allow them to enter key/value pairs
+        if assets_data:
+            # get all known asset names from previous months
+            known_assets = set()
+            for m, data in assets_data.items():
+                known_assets.update(data.keys())
+            known_assets = sorted(list(known_assets))
+        else:
+            known_assets = ["Trading 212 S&S ISA", "Trading 212 Cash ISA", "Crypto", "Monzo savings"]
+            
+        st.write("Enter balances:")
+        new_balances = {}
+        for a_name in known_assets:
+            # pre-fill with last known value if it exists
+            last_val = 0.0
+            if assets_data:
+                last_month_key = sorted(assets_data.keys())[-1]
+                last_val = assets_data[last_month_key].get(a_name, 0.0)
+            
+            val = st.number_input(f"{a_name} Balance (£)", value=float(last_val), step=100.0)
+            if val > 0:
+                new_balances[a_name] = val
+                
+        # allow adding a new custom asset
+        new_a_name = st.text_input("Add New Asset Name (Optional):")
+        new_a_val = st.number_input("New Asset Balance (£)", value=0.0, step=100.0)
+        if new_a_name and new_a_val > 0:
+            new_balances[new_a_name] = new_a_val
+            
+        if st.button("Save Balances"):
+            assets_data[log_month] = new_balances
+            with open(ASSETS_FILE, "w", encoding="utf-8") as f:
+                json.dump(assets_data, f, indent=4)
+            st.success(f"Saved balances for {log_month}!")
+            st.rerun()
+
+    # --- Plot Assets ---
+    if len(assets_data) > 0:
+        # Convert to flat dataframe for plotly
+        rows = []
+        for m, data in assets_data.items():
+            for a_name, val in data.items():
+                rows.append({"Month": m, "Asset": a_name, "Balance": val})
+        
+        if rows:
+            adf = pd.DataFrame(rows)
+            # sort by month
+            adf = adf.sort_values('Month')
+            import plotly.express as px
+            
+            fig_a = px.line(adf, x='Month', y='Balance', color='Asset', markers=True, title="Asset Balances Over Time")
+            st.plotly_chart(fig_a, use_container_width=True)
+            
+            # total net worth line
+            total_nw = adf.groupby('Month')['Balance'].sum().reset_index()
+            fig_nw = px.area(total_nw, x='Month', y='Balance', title="Total Tracked Net Worth")
+            fig_nw.update_traces(line_color='#2ecc71', fillcolor='rgba(46, 204, 113, 0.3)')
+            st.plotly_chart(fig_nw, use_container_width=True)
+
+    st.divider()
+
+    st.subheader("🔄 Internal Wealth Movements")
     if not st.session_state.df.empty:
         internal_df = st.session_state.df[st.session_state.df['Category'].isin(internal_categories)].copy()
         
