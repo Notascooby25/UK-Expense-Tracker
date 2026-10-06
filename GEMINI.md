@@ -8,4 +8,12 @@ This project runs locally on a NUC using Docker and Watchtower.
 3. Watchtower (running on the NUC) polls the registry, downloads the new image, and restarts the container automatically.
 
 **Important AI Rule:**
-Whenever making code changes (`app.py`, etc.), always remind the user that changes will NOT be visible in their live app until the code is committed and pushed to GitHub. Do not attempt to use `docker restart` or `docker-compose up` on this machine, as the live app does not run directly from this folder. Instead, offer to run `git commit` and `git push` for them.
+Whenever making code changes (`app.py`, etc.), always do the following:
+1. Run `git commit` and `git push` for the user to trigger the GitHub Actions build.
+2. Remind the user that changes will NOT be visible in their live app until the GitHub Action finishes building the image (takes ~2 minutes).
+3. Since Watchtower on their NUC only polls every 24 hours, provide the user with the following exact snippet so they can instantly apply the update on their NUC via SSH:
+   ```bash
+   docker pull ghcr.io/notascooby25/uk-expense-tracker:latest
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+Do not attempt to use `docker restart` or `docker compose` on the local machine where you are editing the code, as the live app does not run directly from this folder.
