@@ -1030,9 +1030,12 @@ elif app_page == "📊 Dashboard":
                 
         with bd_col2:
             st.markdown("**🔒 Committed Bills**")
-            com_df = df_v[df_v['Spend_Type'] == 'Committed Expense'].groupby('Category')['Amount'].sum() / months_in_period
+            com_exp = df_v[df_v['Spend_Type'] == 'Committed Expense'].groupby('Category')['Amount'].sum()
+            com_ref = df_v[df_v['Spend_Type'] == 'Committed Refund'].groupby('Category')['Amount'].sum()
+            com_df = (com_exp.add(-com_ref, fill_value=0) / months_in_period).reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
+            com_df = com_df[com_df['Avg P/M (£)'] != 0] # drop zeros
+            
             if not com_df.empty:
-                com_df = com_df.reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
                 com_df = com_df.sort_values(by='Avg P/M (£)', ascending=False)
                 com_df['Avg P/M (£)'] = com_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
                 st.dataframe(com_df, hide_index=True, use_container_width=True)
@@ -1041,9 +1044,12 @@ elif app_page == "📊 Dashboard":
                 
         with bd_col3:
             st.markdown("**🍕 Variable Spend**")
-            var_df = df_v[df_v['Spend_Type'] == 'Variable Expense'].groupby('Category')['Amount'].sum() / months_in_period
+            var_exp = df_v[df_v['Spend_Type'] == 'Variable Expense'].groupby('Category')['Amount'].sum()
+            var_ref = df_v[df_v['Spend_Type'] == 'Variable Refund'].groupby('Category')['Amount'].sum()
+            var_df = (var_exp.add(-var_ref, fill_value=0) / months_in_period).reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
+            var_df = var_df[var_df['Avg P/M (£)'] > 0] # only show positive net spend
+            
             if not var_df.empty:
-                var_df = var_df.reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
                 var_df = var_df.sort_values(by='Avg P/M (£)', ascending=False)
                 var_df['Avg P/M (£)'] = var_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
                 st.dataframe(var_df, hide_index=True, use_container_width=True)
@@ -1052,14 +1058,38 @@ elif app_page == "📊 Dashboard":
                 
         with bd_col4:
             st.markdown("**🏦 Savings & Transfers**")
-            int_df = df_v[df_v['Spend_Type'] == 'Internal Transfer'].groupby('Category')['Amount'].sum() / months_in_period
+            # For internal transfers, a positive Net means money moved OUT of your main spending pool into savings.
+            int_exp = df_v[(df_v['Spend_Type'] == 'Internal Transfer') & (df_v['Transaction_Type'] == 'Expense')].groupby('Category')['Amount'].sum()
+            int_inc = df_v[(df_v['Spend_Type'] == 'Internal Transfer') & (df_v['Transaction_Type'] == 'Income')].groupby('Category')['Amount'].sum()
+            int_df = (int_exp.add(-int_inc, fill_value=0) / months_in_period).reset_index().rename(columns={'Amount': 'Net Flow P/M (£)'})
+            int_df = int_df[int_df['Net Flow P/M (£)'] != 0]
+            
             if not int_df.empty:
-                int_df = int_df.reset_index().rename(columns={'Amount': 'Avg P/M (£)'})
-                int_df = int_df.sort_values(by='Avg P/M (£)', ascending=False)
-                int_df['Avg P/M (£)'] = int_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
+                int_df = int_df.sort_values(by='Net Flow P/M (£)', ascending=False)
+                int_df['Net Flow P/M (£)'] = int_df['Net Flow P/M (£)'].apply(lambda x: f"£{x:,.2f}")
                 st.dataframe(int_df, hide_index=True, use_container_width=True)
             else:
                 st.caption("No internal transfers found.")
+
+        st.write("")
+        with st.expander("🔍 Drill Down into a Category"):
+            st.caption("Select a category from the tables above to see exactly which merchants and transactions make up its total.")
+            all_used_cats = sorted([c for c in df_v['Category'].unique() if pd.notna(c) and c != ""])
+            drill_cat = st.selectbox("Select Category to Inspect:", ["-- Select --"] + all_used_cats)
+            
+            if drill_cat != "-- Select --":
+                drill_df = df_v[df_v['Category'] == drill_cat]
+                
+                # Show net summary
+                cat_exp = drill_df[drill_df['Transaction_Type'] == 'Expense']['Amount'].sum()
+                cat_inc = drill_df[drill_df['Transaction_Type'] == 'Income']['Amount'].sum()
+                cat_net = cat_exp - cat_inc
+                
+                st.markdown(f"**Total Expenditure:** £{cat_exp:,.2f} | **Total Income/Refunds:** £{cat_inc:,.2f} | **Net Cost:** £{cat_net:,.2f}")
+                
+                # Group by merchant
+                merch_drill = drill_df.groupby(['Name', 'Transaction_Type'])['Amount'].sum().reset_index()
+                st.dataframe(merch_drill, use_container_width=True, hide_index=True)
 
         st.divider()
         
