@@ -198,11 +198,16 @@ def get_auth_credentials():
 
 # --- Login & Authentication ---
 cookie_controller = CookieController()
+
 if 'authenticated' not in st.session_state:
-    if cookie_controller.get('uk_expense_auth') == 'true':
-        st.session_state.authenticated = True
-    else:
-        st.session_state.authenticated = False
+    st.session_state.authenticated = False
+
+# The get() method may return None on the first render while it fetches from the browser.
+# Once it returns 'true', we authenticate and rerun to bypass the login screen.
+cookie_auth = cookie_controller.get('uk_expense_auth')
+if cookie_auth == 'true' and not st.session_state.authenticated:
+    st.session_state.authenticated = True
+    st.rerun()
 
 if not st.session_state.authenticated:
     if os.path.exists(LOGO_FILE):
@@ -221,10 +226,18 @@ if not st.session_state.authenticated:
     with st.form("login_form"):
         username = st.text_input("Username", autocomplete="username")
         password = st.text_input("Password", type="password", autocomplete="current-password")
+        
+        # Add a checkbox for "Remember Me"
+        remember_me = st.checkbox("Remember me for 30 days", value=True)
+        
         if st.form_submit_button("Login"):
             if username == valid_user and password == valid_pass:
                 st.session_state.authenticated = True
-                cookie_controller.set('uk_expense_auth', 'true', max_age=90*24*60*60) # 90 days
+                if remember_me:
+                    cookie_controller.set('uk_expense_auth', 'true', max_age=30*24*60*60) # 30 days
+                else:
+                    # Session cookie (expires on browser close)
+                    cookie_controller.set('uk_expense_auth', 'true')
                 st.rerun()
             else:
                 st.error("Incorrect username or password.")
