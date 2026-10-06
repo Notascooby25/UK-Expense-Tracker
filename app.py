@@ -1160,6 +1160,9 @@ elif app_page == "🧠 Intelligence":
     st.subheader("💡 Recurring Spend Detection")
     st.caption("Automatically find merchants you pay regularly that aren't yet in your 'Committed' list.")
     
+    if "ignore_recurring" not in st.session_state.app_settings:
+        st.session_state.app_settings["ignore_recurring"] = []
+
     if st.button("🔍 Scan for Recurring Bills"):
         if not st.session_state.df.empty:
             df_for_scan = st.session_state.df[st.session_state.df['Transaction_Type'] == 'Expense'].copy()
@@ -1178,7 +1181,13 @@ elif app_page == "🧠 Intelligence":
                 merchant_stats['std_amount'] = merchant_stats['std_amount'].fillna(0)
                 
                 candidates = []
+                ignore_list = st.session_state.app_settings.get("ignore_recurring", [])
+                
                 for _, row in merchant_stats.iterrows():
+                    m_name = row['Name']
+                    if m_name in ignore_list:
+                        continue
+                        
                     freq_ratio = row['frequency'] / total_months
                     cv = row['std_amount'] / row['avg_amount'] if row['avg_amount'] > 0 else 0
                     is_frequent = freq_ratio > 0.6 or (row['frequency'] >= 3 and total_months >= 3)
@@ -1188,20 +1197,54 @@ elif app_page == "🧠 Intelligence":
                     if cat not in st.session_state.app_settings.get("committed_categories", []) and cat not in internal_categories:
                         if is_frequent and is_stable:
                             candidates.append({
-                                'Merchant': row['Name'],
+                                'Merchant': m_name,
                                 'Category': cat,
                                 'Freq (Months)': row['frequency'],
                                 'Avg P/M (£)': f"£{row['avg_amount']:,.2f}"
                             })
                 
-                if candidates:
-                    cand_df = pd.DataFrame(candidates).sort_values(by='Freq (Months)', ascending=False)
-                    st.success(f"Found {len(cand_df)} recurring candidates! Consider adding their categories to your Committed list.")
-                    st.dataframe(cand_df, hide_index=True, use_container_width=True)
-                else:
-                    st.info("No unflagged recurring bills found. You are fully optimized!")
+                st.session_state.recurring_candidates = candidates
         else:
             st.warning("No data available.")
+
+    if "recurring_candidates" in st.session_state:
+        candidates = st.session_state.recurring_candidates
+        if candidates:
+            cand_df = pd.DataFrame(candidates).sort_values(by='Freq (Months)', ascending=False)
+            st.success(f"Found {len(cand_df)} recurring candidates! Consider adding their categories to your Committed list.")
+            st.dataframe(cand_df, hide_index=True, use_container_width=True)
+            
+            st.write("Not a recurring bill? Ignore it so it won't appear in future scans:")
+            merchants_to_ignore = st.multiselect("Select Merchants to Ignore", options=[c['Merchant'] for c in candidates])
+            if st.button("🚫 Ignore Selected"):
+                if merchants_to_ignore:
+                    st.session_state.app_settings["ignore_recurring"].extend(merchants_to_ignore)
+                    
+                    # save settings
+                    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                        import json
+                        json.dump(st.session_state.app_settings, f, indent=4)
+                        
+                    # remove from current view
+                    st.session_state.recurring_candidates = [c for c in candidates if c['Merchant'] not in merchants_to_ignore]
+                    st.success(f"Ignored {len(merchants_to_ignore)} merchants!")
+                    st.rerun()
+        else:
+            st.info("No unflagged recurring bills found. You are fully optimized!")
+            
+    with st.expander("👀 View/Edit Ignored Recurring Bills", expanded=False):
+        ignored_rec = st.session_state.app_settings.get("ignore_recurring", [])
+        if ignored_rec:
+            to_remove = st.multiselect("Remove from ignore list:", options=ignored_rec)
+            if st.button("Restore Selected"):
+                if to_remove:
+                    st.session_state.app_settings["ignore_recurring"] = [m for m in ignored_rec if m not in to_remove]
+                    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                        import json
+                        json.dump(st.session_state.app_settings, f, indent=4)
+                    st.rerun()
+        else:
+            st.caption("Your ignore list is empty.")
             
     st.divider()
     
