@@ -715,6 +715,16 @@ with st.sidebar:
                     st.toast("✅ Automatic rule removed!")
                     st.rerun()
                     
+        st.markdown("**Apply Rules Manually**")
+        if st.button("🚀 Apply Rules to All Existing Data", use_container_width=True):
+            if not st.session_state.df.empty:
+                st.session_state.df = apply_auto_rules(st.session_state.df)
+                save_database(show_success=False)
+                st.toast("✅ Rules applied to existing transactions!")
+                st.rerun()
+            else:
+                st.warning("No data to apply rules to.")
+                
         st.divider()
         st.markdown("**3. System Setup**")
         new_cat = st.text_input("Add New Category")
