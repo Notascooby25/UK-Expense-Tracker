@@ -133,6 +133,17 @@ def get_matching_auto_rule(row, rules=None):
             continue
         if not rule_contains(row.get("Name", ""), rule.get("name_contains", "")):
             continue
+        
+        max_amt = rule.get("max_amount")
+        if max_amt is not None and max_amt > 0:
+            row_amt = row.get("Amount")
+            if row_amt is not None:
+                try:
+                    if float(row_amt) >= max_amt:
+                        continue
+                except ValueError:
+                    pass
+                    
         return idx, rule
 
     return None, None
@@ -170,7 +181,12 @@ def move_list_item(items, from_index, to_index):
 
 
 def format_auto_rule(rule, idx):
-    return f"{idx + 1}. name='{rule.get('name_contains', '')}' notes='{rule.get('notes_contains', '')}' -> {rule.get('category', '')}"
+    base = f"{idx + 1}. name='{rule.get('name_contains', '')}' notes='{rule.get('notes_contains', '')}'"
+    max_amt = rule.get('max_amount')
+    if max_amt and max_amt > 0:
+        base += f" max_amount='£{max_amt}'"
+    base += f" -> {rule.get('category', '')}"
+    return base
 
 def has_auth_secrets():
     try:
@@ -603,6 +619,7 @@ with st.sidebar:
                         st.session_state["auto_rule_edit_index"] = selected_idx
                         st.session_state["auto_rule_edit_name"] = selected_rule_data.get("name_contains", "")
                         st.session_state["auto_rule_edit_notes"] = selected_rule_data.get("notes_contains", "")
+                        st.session_state["auto_rule_edit_max_amount"] = float(selected_rule_data.get("max_amount", 0.0))
                         st.session_state["auto_rule_edit_category"] = selected_rule_data.get("category", master_cats[0])
                         st.rerun()
             with edit_col2:
@@ -610,6 +627,7 @@ with st.sidebar:
                     st.session_state.pop("auto_rule_edit_index", None)
                     st.session_state.pop("auto_rule_edit_name", None)
                     st.session_state.pop("auto_rule_edit_notes", None)
+                    st.session_state.pop("auto_rule_edit_max_amount", None)
                     st.session_state.pop("auto_rule_edit_category", None)
                     st.rerun()
 
@@ -623,6 +641,7 @@ with st.sidebar:
                 with st.form("edit_auto_rule_form"):
                     e_name = st.text_input("Edit name / merchant contains", key="auto_rule_edit_name")
                     e_notes = st.text_input("Edit notes contains", key="auto_rule_edit_notes")
+                    e_max_amt = st.number_input("Max Amount (£) (0 for no limit)", min_value=0.0, step=1.0, key="auto_rule_edit_max_amount")
                     e_cat = st.selectbox("Edit category to", master_cats, index=master_cats.index(default_category), key="auto_rule_edit_category")
                     e_submit = st.form_submit_button("Save Rule Changes")
 
@@ -633,6 +652,7 @@ with st.sidebar:
                         st.session_state.app_settings["auto_rules"][edit_idx] = {
                             "name_contains": e_name.strip(),
                             "notes_contains": e_notes.strip(),
+                            "max_amount": e_max_amt,
                             "category": e_cat,
                         }
                         save_database(show_success=False)
@@ -644,13 +664,14 @@ with st.sidebar:
         st.markdown("**Test Rule Match**")
         test_name = st.text_input("Test name / merchant", placeholder="e.g. Sarah or Tesco", key="auto_rule_test_name")
         test_notes = st.text_input("Test notes", placeholder="e.g. FOOD or lunch", key="auto_rule_test_notes")
+        test_amount = st.number_input("Test Amount (£)", min_value=0.0, step=1.0, key="auto_rule_test_amount")
 
-        if test_name or test_notes:
-            preview_row = {"Name": test_name, "Notes": test_notes}
+        if test_name or test_notes or test_amount > 0:
+            preview_row = {"Name": test_name, "Notes": test_notes, "Amount": test_amount}
             matched_idx, matched_rule = get_matching_auto_rule(preview_row)
             if matched_rule:
                 st.success(
-                    f"Rule {matched_idx + 1} would fire: name='{matched_rule.get('name_contains', '')}' notes='{matched_rule.get('notes_contains', '')}' -> {matched_rule.get('category', '')}"
+                    f"Rule {matched_idx + 1} would fire: name='{matched_rule.get('name_contains', '')}' notes='{matched_rule.get('notes_contains', '')}' max_amount='£{matched_rule.get('max_amount', 0)}' -> {matched_rule.get('category', '')}"
                 )
             else:
                 st.warning("No automatic rule would match this sample.")
@@ -658,6 +679,7 @@ with st.sidebar:
         with st.form("auto_rule_form", clear_on_submit=True):
             r_name = st.text_input("Person / merchant name contains", placeholder="e.g. Sarah")
             r_notes = st.text_input("Notes contains", placeholder="e.g. FOOD")
+            r_max_amt = st.number_input("Max Amount (£) (0 for no limit)", min_value=0.0, step=1.0)
             r_cat = st.selectbox("Set category to", master_cats)
             r_submit = st.form_submit_button("Add Auto Rule")
 
@@ -669,6 +691,7 @@ with st.sidebar:
                     {
                         "name_contains": r_name.strip(),
                         "notes_contains": r_notes.strip(),
+                        "max_amount": r_max_amt,
                         "category": r_cat,
                     }
                 )
@@ -686,6 +709,7 @@ with st.sidebar:
                     st.session_state.pop("auto_rule_edit_index", None)
                     st.session_state.pop("auto_rule_edit_name", None)
                     st.session_state.pop("auto_rule_edit_notes", None)
+                    st.session_state.pop("auto_rule_edit_max_amount", None)
                     st.session_state.pop("auto_rule_edit_category", None)
                     save_database(show_success=False)
                     st.toast("✅ Automatic rule removed!")
