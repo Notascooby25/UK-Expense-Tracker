@@ -1056,6 +1056,8 @@ elif app_page == "📊 Dashboard":
             st.markdown("**💰 Income Streams**")
             inc_data = df_v[df_v['Spend_Type'] == 'True Income']
             if not inc_data.empty:
+                inc_total = inc_data['Amount'].sum() / months_in_period
+                st.markdown(f"**Total: £{inc_total:,.2f}**")
                 for cat, grp in inc_data.groupby('Category'):
                     cat_sum = grp['Amount'].sum() / months_in_period
                     if cat_sum > 0:
@@ -1074,6 +1076,8 @@ elif app_page == "📊 Dashboard":
             com_df = com_df[com_df['Avg P/M (£)'] != 0] # drop zeros
             
             if not com_df.empty:
+                com_total = com_df['Avg P/M (£)'].sum()
+                st.markdown(f"**Total: £{com_total:,.2f}**")
                 com_df = com_df.sort_values(by='Avg P/M (£)', ascending=False)
                 com_df['Avg P/M (£)'] = com_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
                 st.dataframe(com_df, hide_index=True, use_container_width=True)
@@ -1088,6 +1092,8 @@ elif app_page == "📊 Dashboard":
             var_df = var_df[var_df['Avg P/M (£)'] > 0] # only show positive net spend
             
             if not var_df.empty:
+                var_total = var_df['Avg P/M (£)'].sum()
+                st.markdown(f"**Total: £{var_total:,.2f}**")
                 var_df = var_df.sort_values(by='Avg P/M (£)', ascending=False)
                 var_df['Avg P/M (£)'] = var_df['Avg P/M (£)'].apply(lambda x: f"£{x:,.2f}")
                 st.dataframe(var_df, hide_index=True, use_container_width=True)
