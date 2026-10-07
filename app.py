@@ -376,7 +376,7 @@ def process_monzo_splits(df):
                     cat, amount = split.split(':')
                     new_row = row.copy()
                     new_row['Category'] = cat.strip()
-                    new_row['Amount'] = abs(float(amount.strip()))
+                    new_row['Amount'] = float(amount.strip())
                     new_rows.append(new_row)
             except Exception:
                 rows_to_drop.remove(index)
