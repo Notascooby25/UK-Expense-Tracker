@@ -12,7 +12,7 @@ from streamlit_cookies_controller import CookieController
 
 # Internal movement categories & True Income
 internal_categories = ["Savings", "Investments - ISA", "Investment - ISA", "Transfers", "Investment - Crypto"]
-true_income_categories = ['Income', 'Salary', 'Wages', 'Interest', 'Bonus']
+true_income_categories = ['Income', 'Salary', 'Wages', 'Interest', 'Bonus', 'BE Secondary Salary Wages']
 
 # --- Configuration & Setup ---
 st.set_page_config(page_title="UK Expense Tracker", layout="wide")
