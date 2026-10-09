@@ -1476,15 +1476,29 @@ elif app_page == "⚙️ Data Editor":
                 new_bulk_cat = act_col1.selectbox("Set Category to:", ["No Change"] + master_cats)
                 new_bulk_type = act_col2.selectbox("Set Type to:", ["No Change", "Expense", "Income"])
 
-                if st.button(" Execute Bulk Update & Save", type="primary"):
-                    selected_indices = [label_to_idx[lbl] for lbl in selected_labels]
-                    if selected_indices:
-                        if new_bulk_cat != "No Change": st.session_state.df.loc[selected_indices, 'Category'] = new_bulk_cat
-                        if new_bulk_type != "No Change": st.session_state.df.loc[selected_indices, 'Transaction_Type'] = new_bulk_type
-                        save_database(show_success=False)
-                        st.toast(f"✅ Updated {len(selected_indices)} rows and saved to disk!")
-                    else:
-                        st.warning("No rows selected.")
+                cmd_col1, cmd_col2 = st.columns(2)
+                with cmd_col1:
+                    if st.button(" Execute Bulk Update & Save", type="primary", use_container_width=True):
+                        selected_indices = [label_to_idx[lbl] for lbl in selected_labels]
+                        if selected_indices:
+                            if new_bulk_cat != "No Change": st.session_state.df.loc[selected_indices, 'Category'] = new_bulk_cat
+                            if new_bulk_type != "No Change": st.session_state.df.loc[selected_indices, 'Transaction_Type'] = new_bulk_type
+                            save_database(show_success=False)
+                            st.toast(f"✅ Updated {len(selected_indices)} rows and saved to disk!")
+                            st.rerun()
+                        else:
+                            st.warning("No rows selected.")
+                            
+                with cmd_col2:
+                    if st.button(" 🗑️ Delete Selected Rows", type="primary", use_container_width=True):
+                        selected_indices = [label_to_idx[lbl] for lbl in selected_labels]
+                        if selected_indices:
+                            st.session_state.df = st.session_state.df.drop(selected_indices)
+                            save_database(show_success=False)
+                            st.toast(f"✅ Deleted {len(selected_indices)} rows and saved to disk!")
+                            st.rerun()
+                        else:
+                            st.warning("No rows selected.")
 
 # === TAB 5: EXPORT ===
 elif app_page == "📤 Export":
