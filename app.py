@@ -1147,9 +1147,15 @@ elif app_page == "📊 Dashboard":
                 
                 st.markdown(f"**Total Expenditure:** £{cat_exp:,.2f} | **Total Income/Refunds:** £{cat_inc:,.2f} | **Net Cost:** £{cat_net:,.2f}")
                 
-                # Group by merchant
+                st.markdown("**Merchant Summary**")
                 merch_drill = drill_df.groupby(['Name', 'Transaction_Type'])['Amount'].sum().reset_index()
                 st.dataframe(merch_drill, use_container_width=True, hide_index=True, height=(len(merch_drill) * 35) + 38)
+                
+                st.markdown("**Individual Transactions**")
+                raw_drill = drill_df[['Date', 'Name', 'Amount', 'Transaction_Type', 'Notes']].copy()
+                raw_drill = raw_drill.sort_values(by='Date', ascending=False)
+                raw_drill['Date'] = raw_drill['Date'].dt.strftime('%d/%m/%Y')
+                st.dataframe(raw_drill, use_container_width=True, hide_index=True, height=(len(raw_drill) * 35) + 38)
 
         st.divider()
         
