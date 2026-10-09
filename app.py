@@ -791,7 +791,12 @@ if app_page == "📝 Add & Sync":
                     old_notes = st.session_state.new_sync_rows.loc[idx, 'Notes']
                     new_notes = row['Notes']
                     
-                    if old_cat != new_cat or old_notes != new_notes:
+                    old_c_safe = "" if pd.isna(old_cat) else str(old_cat)
+                    new_c_safe = "" if pd.isna(new_cat) else str(new_cat)
+                    old_n_safe = "" if pd.isna(old_notes) else str(old_notes)
+                    new_n_safe = "" if pd.isna(new_notes) else str(new_notes)
+                    
+                    if old_c_safe != new_c_safe or old_n_safe != new_n_safe:
                         mask = (st.session_state.df['Date'] == row['Date']) & \
                                (st.session_state.df['Name'] == row['Name']) & \
                                (st.session_state.df['Amount'] == row['Amount']) & \
@@ -799,9 +804,9 @@ if app_page == "📝 Add & Sync":
                         
                         if mask.any():
                             match_idx = st.session_state.df[mask].index[-1]
-                            if old_cat != new_cat:
+                            if old_c_safe != new_c_safe:
                                 st.session_state.df.loc[match_idx, 'Category'] = new_cat
-                            if old_notes != new_notes:
+                            if old_n_safe != new_n_safe:
                                 st.session_state.df.loc[match_idx, 'Notes'] = new_notes
                             
                 st.session_state.new_sync_rows = edited_new_rows
