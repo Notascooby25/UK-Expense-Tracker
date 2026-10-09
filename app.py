@@ -910,58 +910,64 @@ elif app_page == "📊 Dashboard":
         df_v['Spend_Type'] = df_v.apply(assign_spend_type, axis=1)
 
         # --- FILTERS ---
-        st.sidebar.markdown("### ⚙️ Dashboard Filters")
-        
-        if st.sidebar.button(" Reset Dashboard Filters", key="reset_dash"):
-            st.session_state['dash_hide_int'] = True
-            st.session_state['dash_net_spend'] = False
-            st.session_state['dash_year_mode'] = "Financial Year"
-            st.session_state['dash_sel_year'] = "All"
-            st.session_state['dash_sel_bank'] = "All Banks"
-            st.session_state['dash_incl'] = []
-            st.session_state['dash_excl'] = []
-            if 'dash_months' in st.session_state: st.session_state['dash_months'] = []
-            st.rerun()
+        with st.expander("⚙️ Adjust Dashboard Filters"):
+            if st.button(" Reset Dashboard Filters", key="reset_dash"):
+                st.session_state['dash_hide_int'] = True
+                st.session_state['dash_net_spend'] = False
+                st.session_state['dash_year_mode'] = "Financial Year"
+                st.session_state['dash_sel_year'] = "All"
+                st.session_state['dash_sel_bank'] = "All Banks"
+                st.session_state['dash_incl'] = []
+                st.session_state['dash_excl'] = []
+                if 'dash_months' in st.session_state: st.session_state['dash_months'] = []
+                st.rerun()
+                
+            top_col1, top_col2 = st.columns(2)
+            hide_internal = top_col1.checkbox("Hide Internal Movements", value=st.session_state.get('dash_hide_int', True), key="dash_hide_int")
+            net_spend_mode = top_col2.checkbox("Net Spend Only Mode", value=st.session_state.get('dash_net_spend', False), key="dash_net_spend")
             
-        hide_internal = st.sidebar.checkbox("Hide Internal Movements", value=st.session_state.get('dash_hide_int', True), key="dash_hide_int")
-        net_spend_mode = st.sidebar.checkbox("Net Spend Only Mode", value=st.session_state.get('dash_net_spend', False), key="dash_net_spend")
-        
-        if hide_internal: 
-            cats_to_hide = [c for c in internal_categories if c not in committed_cats]
-            df_v = df_v[~df_v['Category'].isin(cats_to_hide)]
-            
-        if net_spend_mode: df_v = df_v[df_v['Transaction_Type'] == 'Expense']
+            if hide_internal: 
+                cats_to_hide = [c for c in internal_categories if c not in committed_cats]
+                df_v = df_v[~df_v['Category'].isin(cats_to_hide)]
+                
+            if net_spend_mode: df_v = df_v[df_v['Transaction_Type'] == 'Expense']
 
-        year_type = st.sidebar.radio("Time Mode", ["Financial Year", "Calendar Year", "Rolling Period"], key="dash_year_mode")
-        
-        rolling_options = {"Last 3 Months": 3, "Last 6 Months": 6, "Last 12 Months": 12, "Last 18 Months": 18, "Last 2 Years": 24}
-    
-        if year_type == "Rolling Period":
-            sel_year = st.sidebar.selectbox("Select Timeframe", list(rolling_options.keys()), key="dash_sel_year")
-            months_to_look_back = rolling_options.get(sel_year, 3) 
-            cutoff = pd.Timestamp.now().normalize() - pd.DateOffset(months=months_to_look_back)
-            df_v = df_v[df_v['Date'] >= cutoff]
-        else:
-            target_col = 'Calendar_Year' if year_type == "Calendar Year" else 'Financial_Year'
-            all_years = ['All'] + sorted(list(df_v[target_col].dropna().unique()))
-            sel_year = st.sidebar.selectbox("Select Year", all_years, key="dash_sel_year")
-            if sel_year != 'All': 
-                df_v = df_v[df_v[target_col] == sel_year]
-                
-        all_dash_banks = ['All Banks'] + master_banks
-        sel_dash_bank = st.sidebar.selectbox("Bank", all_dash_banks, key="dash_sel_bank")
-        if sel_dash_bank != 'All Banks': df_v = df_v[df_v['Bank'] == sel_dash_bank]
-        
-        if year_type == "Calendar Year":
-            month_names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-            sel_months = st.sidebar.multiselect("Specific Months", month_names, key="dash_months")
-            if sel_months: df_v = df_v[df_v['Date'].dt.strftime('%B').isin(sel_months)]
-                
-        incl = st.sidebar.multiselect("Specific Categories (Include)", master_cats, key="dash_incl")
-        if incl: df_v = df_v[df_v['Category'].isin(incl)]
+            fc1, fc2, fc3 = st.columns(3)
+            year_type = fc1.radio("Time Mode", ["Financial Year", "Calendar Year", "Rolling Period"], horizontal=True, key="dash_year_mode")
             
-        excl = st.sidebar.multiselect("Categories to Exclude", master_cats, key="dash_excl")
-        if excl: df_v = df_v[~df_v['Category'].isin(excl)]
+            rolling_options = {"Last 3 Months": 3, "Last 6 Months": 6, "Last 12 Months": 12, "Last 18 Months": 18, "Last 2 Years": 24}
+        
+            if year_type == "Rolling Period":
+                sel_year = fc2.selectbox("Select Timeframe", list(rolling_options.keys()), key="dash_sel_year")
+                months_to_look_back = rolling_options.get(sel_year, 3) 
+                cutoff = pd.Timestamp.now().normalize() - pd.DateOffset(months=months_to_look_back)
+                df_v = df_v[df_v['Date'] >= cutoff]
+            else:
+                target_col = 'Calendar_Year' if year_type == "Calendar Year" else 'Financial_Year'
+                all_years = ['All'] + sorted(list(df_v[target_col].dropna().unique()))
+                sel_year = fc2.selectbox("Select Year", all_years, key="dash_sel_year")
+                if sel_year != 'All': 
+                    df_v = df_v[df_v[target_col] == sel_year]
+                    
+            all_dash_banks = ['All Banks'] + master_banks
+            sel_dash_bank = fc3.selectbox("Bank", all_dash_banks, key="dash_sel_bank")
+            if sel_dash_bank != 'All Banks': df_v = df_v[df_v['Bank'] == sel_dash_bank]
+            
+            fc4, fc5, fc6 = st.columns(3)
+            with fc4:
+                if year_type == "Calendar Year":
+                    month_names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+                    sel_months = st.multiselect("Specific Months", month_names, key="dash_months")
+                    if sel_months: df_v = df_v[df_v['Date'].dt.strftime('%B').isin(sel_months)]
+                else: st.write("") 
+                    
+            with fc5:
+                incl = st.multiselect("Specific Categories (Include)", master_cats, key="dash_incl")
+                if incl: df_v = df_v[df_v['Category'].isin(incl)]
+                
+            with fc6:
+                excl = st.multiselect("Categories to Exclude", master_cats, key="dash_excl")
+                if excl: df_v = df_v[~df_v['Category'].isin(excl)]
 
         # --- METRICS CALCULATIONS (Refund Adjusted) ---
         inc = df_v[df_v['Spend_Type']=='True Income']['Amount'].sum()
