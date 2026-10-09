@@ -1427,7 +1427,7 @@ elif app_page == "⚙️ Data Editor":
             de_disp_rows = st.selectbox("Rows to display:", [20, 50, 100, 500, "All"], index=0, key="de_rows")
             de_pixel_height = 800 if de_disp_rows == "All" else int(de_disp_rows) * 35 + 40
             
-            edited_df = st.data_editor(df_edit, use_container_width=True, height=de_pixel_height, num_rows="dynamic" if not is_filtered else "fixed", column_config=table_format)
+            edited_df = st.data_editor(df_edit, use_container_width=True, height=de_pixel_height, num_rows="dynamic", column_config=table_format)
             
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
@@ -1436,8 +1436,18 @@ elif app_page == "⚙️ Data Editor":
                 save_pressed = st.button(" Save Data to Disk", use_container_width=True, key="save_table_disk")
                 
             if commit_pressed:
-                if is_filtered: st.session_state.df.update(edited_df)
-                else: st.session_state.df = edited_df
+                if is_filtered:
+                    st.session_state.df.update(edited_df)
+                    deleted_indices = set(df_edit.index) - set(edited_df.index)
+                    if deleted_indices:
+                        st.session_state.df = st.session_state.df.drop(list(deleted_indices))
+                    new_indices = set(edited_df.index) - set(df_edit.index)
+                    if new_indices:
+                        st.session_state.df = pd.concat([st.session_state.df, edited_df.loc[list(new_indices)]])
+                else:
+                    st.session_state.df = edited_df
+                
+                st.session_state.df = st.session_state.df.reset_index(drop=True)
                 
                 st.session_state.df['Financial_Year'] = st.session_state.df['Date'].apply(calculate_uk_financial_year)
                 st.toast("✅ Edits committed to current session!")
