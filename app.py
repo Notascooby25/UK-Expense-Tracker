@@ -1518,121 +1518,160 @@ elif app_page == "📊 Dashboard":
         st.divider()
 
         # --- DETAILED SPREADSHEET-STYLE BREAKDOWN ---
-        st.markdown("### 📋 Detailed Cash Flow Breakdown (Monthly Averages)")
-        st.caption(
-            "A spreadsheet-style view of your Income, Committed Bills, Variable Spend, and Savings per month."
-        )
-
-        tab_inc, tab_com, tab_var, tab_sav = st.tabs(
-            [
-                "💰 Income Streams",
-                "🔒 Committed Bills",
-                "🍕 Variable Spend",
-                "🏦 Savings & Transfers",
-            ]
-        )
-
-        with tab_inc:
-            inc_data = df_v[df_v["Spend_Type"] == "True Income"]
-            if not inc_data.empty:
-                inc_total = inc_data["Amount"].sum() / months_in_period
-                st.markdown(f"**Total Average Income: £{inc_total:,.2f}** / month")
-                for cat, grp in inc_data.groupby("Category"):
-                    cat_sum = grp["Amount"].sum() / months_in_period
-                    if cat_sum > 0:
-                        st.markdown(f"**{cat}: £{cat_sum:,.2f}**")
-                        merch_grp = grp.groupby("Name")["Amount"].sum() / months_in_period
-                        for m, val in merch_grp.items():
-                            st.caption(f"&nbsp;&nbsp;&nbsp;• {m}: £{val:,.2f}")
-            else:
-                st.caption("No income recorded.")
-
-        with tab_com:
-            com_exp = (
-                df_v[df_v["Spend_Type"] == "Committed Expense"].groupby("Category")["Amount"].sum()
+        cf_hdr_col, cf_toggle_col = st.columns([3, 1])
+        with cf_hdr_col:
+            st.markdown("### 📋 Detailed Cash Flow Breakdown (Monthly Averages)")
+            st.caption(
+                "A spreadsheet-style view of your Income, Committed Bills, Variable Spend, and Savings per month."
             )
-            com_ref = (
-                df_v[df_v["Spend_Type"] == "Committed Refund"].groupby("Category")["Amount"].sum()
+        with cf_toggle_col:
+            cf_view_mode = st.radio(
+                "Layout View",
+                ["🖥️ Desktop (Grid)", "📱 Mobile (Tabs)"],
+                index=0,
+                key="dash_cf_view_mode",
+                horizontal=True,
             )
-            com_df = (
-                (com_exp.add(-com_ref, fill_value=0) / months_in_period)
-                .reset_index()
-                .rename(columns={"Amount": "Avg P/M (£)"})
-            )
-            com_df = com_df[com_df["Avg P/M (£)"] != 0]  # drop zeros
 
-            if not com_df.empty:
-                com_total = com_df["Avg P/M (£)"].sum()
-                st.markdown(f"**Total Committed Bills: £{com_total:,.2f}** / month")
-                com_df = com_df.sort_values(by="Avg P/M (£)", ascending=False)
-                com_df["Avg P/M (£)"] = com_df["Avg P/M (£)"].apply(lambda x: f"£{x:,.2f}")
-                st.dataframe(
-                    com_df,
-                    hide_index=True,
-                    use_container_width=True,
-                    height=(len(com_df) * 35) + 38,
-                )
-            else:
-                st.caption("No committed bills found.")
-
-        with tab_var:
-            var_exp = (
-                df_v[df_v["Spend_Type"] == "Variable Expense"].groupby("Category")["Amount"].sum()
-            )
-            var_ref = (
-                df_v[df_v["Spend_Type"] == "Variable Refund"].groupby("Category")["Amount"].sum()
-            )
-            var_df = (
-                (var_exp.add(-var_ref, fill_value=0) / months_in_period)
-                .reset_index()
-                .rename(columns={"Amount": "Avg P/M (£)"})
-            )
-            var_df = var_df[var_df["Avg P/M (£)"] > 0]  # only show positive net spend
-
-            if not var_df.empty:
-                var_total = var_df["Avg P/M (£)"].sum()
-                st.markdown(f"**Total Variable Spend: £{var_total:,.2f}** / month")
-                var_df = var_df.sort_values(by="Avg P/M (£)", ascending=False)
-                var_df["Avg P/M (£)"] = var_df["Avg P/M (£)"].apply(lambda x: f"£{x:,.2f}")
-                st.dataframe(
-                    var_df,
-                    hide_index=True,
-                    use_container_width=True,
-                    height=(len(var_df) * 35) + 38,
-                )
-            else:
-                st.caption("No variable spend found.")
-
-        with tab_sav:
-            int_data = df_v[df_v["Spend_Type"] == "Internal Transfer"]
-            if not int_data.empty:
-                cats_found = 0
-                for cat, grp in int_data.groupby("Category"):
-                    cat_exp = grp[grp["Transaction_Type"] == "Expense"]["Amount"].sum()
-                    cat_inc = grp[grp["Transaction_Type"] == "Income"]["Amount"].sum()
-                    cat_net = (cat_exp - cat_inc) / months_in_period
-
-                    if cat_net != 0:
-                        cats_found += 1
-                        st.markdown(f"**{cat}: £{cat_net:,.2f}**")
-                        merch_exp = (
-                            grp[grp["Transaction_Type"] == "Expense"]
-                            .groupby("Name")["Amount"]
-                            .sum()
-                        )
-                        merch_inc = (
-                            grp[grp["Transaction_Type"] == "Income"].groupby("Name")["Amount"].sum()
-                        )
-                        merch_net = merch_exp.add(-merch_inc, fill_value=0) / months_in_period
-
-                        for m, val in merch_net.items():
-                            if val != 0:
+        def render_cf_income(container):
+            with container:
+                st.markdown("**💰 Income Streams**")
+                inc_data = df_v[df_v["Spend_Type"] == "True Income"]
+                if not inc_data.empty:
+                    inc_total = inc_data["Amount"].sum() / months_in_period
+                    st.markdown(f"**Total: £{inc_total:,.2f}**")
+                    for cat, grp in inc_data.groupby("Category"):
+                        cat_sum = grp["Amount"].sum() / months_in_period
+                        if cat_sum > 0:
+                            st.markdown(f"**{cat}: £{cat_sum:,.2f}**")
+                            merch_grp = grp.groupby("Name")["Amount"].sum() / months_in_period
+                            for m, val in merch_grp.items():
                                 st.caption(f"&nbsp;&nbsp;&nbsp;• {m}: £{val:,.2f}")
+                else:
+                    st.caption("No income recorded.")
 
-                if cats_found == 0:
-                    st.caption("No net internal transfers found.")
-            else:
-                st.caption("No internal transfers found.")
+        def render_cf_committed(container):
+            with container:
+                st.markdown("**🔒 Committed Bills**")
+                com_exp = (
+                    df_v[df_v["Spend_Type"] == "Committed Expense"]
+                    .groupby("Category")["Amount"]
+                    .sum()
+                )
+                com_ref = (
+                    df_v[df_v["Spend_Type"] == "Committed Refund"]
+                    .groupby("Category")["Amount"]
+                    .sum()
+                )
+                com_df = (
+                    (com_exp.add(-com_ref, fill_value=0) / months_in_period)
+                    .reset_index()
+                    .rename(columns={"Amount": "Avg P/M (£)"})
+                )
+                com_df = com_df[com_df["Avg P/M (£)"] != 0]  # drop zeros
+
+                if not com_df.empty:
+                    com_total = com_df["Avg P/M (£)"].sum()
+                    st.markdown(f"**Total: £{com_total:,.2f}**")
+                    com_df = com_df.sort_values(by="Avg P/M (£)", ascending=False)
+                    com_df["Avg P/M (£)"] = com_df["Avg P/M (£)"].apply(lambda x: f"£{x:,.2f}")
+                    st.dataframe(
+                        com_df,
+                        hide_index=True,
+                        use_container_width=True,
+                        height=(len(com_df) * 35) + 38,
+                    )
+                else:
+                    st.caption("No committed bills found.")
+
+        def render_cf_variable(container):
+            with container:
+                st.markdown("**🍕 Variable Spend**")
+                var_exp = (
+                    df_v[df_v["Spend_Type"] == "Variable Expense"]
+                    .groupby("Category")["Amount"]
+                    .sum()
+                )
+                var_ref = (
+                    df_v[df_v["Spend_Type"] == "Variable Refund"]
+                    .groupby("Category")["Amount"]
+                    .sum()
+                )
+                var_df = (
+                    (var_exp.add(-var_ref, fill_value=0) / months_in_period)
+                    .reset_index()
+                    .rename(columns={"Amount": "Avg P/M (£)"})
+                )
+                var_df = var_df[var_df["Avg P/M (£)"] > 0]  # only show positive net spend
+
+                if not var_df.empty:
+                    var_total = var_df["Avg P/M (£)"].sum()
+                    st.markdown(f"**Total: £{var_total:,.2f}**")
+                    var_df = var_df.sort_values(by="Avg P/M (£)", ascending=False)
+                    var_df["Avg P/M (£)"] = var_df["Avg P/M (£)"].apply(lambda x: f"£{x:,.2f}")
+                    st.dataframe(
+                        var_df,
+                        hide_index=True,
+                        use_container_width=True,
+                        height=(len(var_df) * 35) + 38,
+                    )
+                else:
+                    st.caption("No variable spend found.")
+
+        def render_cf_savings(container):
+            with container:
+                st.markdown("**🏦 Savings & Transfers**")
+                int_data = df_v[df_v["Spend_Type"] == "Internal Transfer"]
+                if not int_data.empty:
+                    cats_found = 0
+                    for cat, grp in int_data.groupby("Category"):
+                        cat_exp = grp[grp["Transaction_Type"] == "Expense"]["Amount"].sum()
+                        cat_inc = grp[grp["Transaction_Type"] == "Income"]["Amount"].sum()
+                        cat_net = (cat_exp - cat_inc) / months_in_period
+
+                        if cat_net != 0:
+                            cats_found += 1
+                            st.markdown(f"**{cat}: £{cat_net:,.2f}**")
+                            merch_exp = (
+                                grp[grp["Transaction_Type"] == "Expense"]
+                                .groupby("Name")["Amount"]
+                                .sum()
+                            )
+                            merch_inc = (
+                                grp[grp["Transaction_Type"] == "Income"]
+                                .groupby("Name")["Amount"]
+                                .sum()
+                            )
+                            merch_net = merch_exp.add(-merch_inc, fill_value=0) / months_in_period
+
+                            for m, val in merch_net.items():
+                                if val != 0:
+                                    st.caption(f"&nbsp;&nbsp;&nbsp;• {m}: £{val:,.2f}")
+
+                    if cats_found == 0:
+                        st.caption("No net internal transfers found.")
+                else:
+                    st.caption("No internal transfers found.")
+
+        if cf_view_mode == "📱 Mobile (Tabs)":
+            tab_inc, tab_com, tab_var, tab_sav = st.tabs(
+                [
+                    "💰 Income Streams",
+                    "🔒 Committed Bills",
+                    "🍕 Variable Spend",
+                    "🏦 Savings & Transfers",
+                ]
+            )
+            render_cf_income(tab_inc)
+            render_cf_committed(tab_com)
+            render_cf_variable(tab_var)
+            render_cf_savings(tab_sav)
+        else:
+            bd_col1, bd_col2, bd_col3, bd_col4 = st.columns(4)
+            render_cf_income(bd_col1)
+            render_cf_committed(bd_col2)
+            render_cf_variable(bd_col3)
+            render_cf_savings(bd_col4)
 
         st.write("")
         with st.expander("🔍 Drill Down into a Category"):
