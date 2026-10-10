@@ -31,6 +31,14 @@ ACCOUNT_SCOPE_PERSONAL = "Personal"
 ACCOUNT_SCOPE_JOINT = "Joint"
 ACCOUNT_SCOPES = [ACCOUNT_SCOPE_PERSONAL, ACCOUNT_SCOPE_JOINT]
 
+CHART_COLORS = {
+    'income': '#2ecc71',         # Green
+    'committed': '#ff5252',      # Lighter Red (improved contrast from #8b0000)
+    'variable': '#f39c12',       # Orange
+    'cumulative': '#3498db',     # Blue
+    'category': '#9b59b6',       # Purple
+    'merchant': '#e67e22'        # Orange-Red
+}
 
 def get_scoped_filename(base_filename, account_scope):
     if account_scope == ACCOUNT_SCOPE_PERSONAL:
@@ -797,6 +805,30 @@ table_format = {
     "Is_Subscription": st.column_config.CheckboxColumn("Subscription?")
 }
 
+@st.cache_data
+def get_monthly_cashflow(df_v):
+    ms = df_v.groupby(['Month_Year', 'Spend_Type'])['Amount'].sum().unstack(fill_value=0).reset_index()
+    for col in ['True Income', 'Committed Expense', 'Variable Expense']:
+        if col not in ms.columns: ms[col] = 0
+    return ms
+
+@st.cache_data
+def get_cumulative_wealth(df_v):
+    df_daily = df_v.groupby('Date').apply(lambda x: x[x['Spend_Type']=='True Income']['Amount'].sum() - x[x['Spend_Type'].str.contains('Expense')]['Amount'].sum()).reset_index(name='Net')
+    df_daily['Cumulative'] = df_daily['Net'].cumsum()
+    return df_daily
+
+@st.cache_data
+def get_top_expenses_by_col(df_v, col_name, n=10):
+    exp_df = df_v[df_v['Spend_Type'].str.contains('Expense')]
+    return exp_df.groupby(col_name)['Amount'].sum().nlargest(n).reset_index()
+
+@st.cache_data
+def get_sunburst_data(df_v):
+    exp_df = df_v[df_v['Spend_Type'].str.contains('Expense')].copy()
+    exp_df['Category'] = exp_df['Category'].replace('', 'Uncategorized').fillna('Uncategorized')
+    return exp_df[exp_df['Amount'] > 0]
+
 # === PAGE 1: ADD & SYNC ===
 if app_page == "📝 Add & Sync":
     if not st.session_state.new_sync_rows.empty:
@@ -1223,14 +1255,12 @@ elif app_page == "📊 Dashboard":
                     chart = charts_to_show[i + j]
                     with cols[j]:
                         if chart == 'monthly':
-                            ms = df_v.groupby(['Month_Year', 'Spend_Type'])['Amount'].sum().unstack(fill_value=0).reset_index()
-                            for col in ['True Income', 'Committed Expense', 'Variable Expense']:
-                                if col not in ms.columns: ms[col] = 0
+                            ms = get_monthly_cashflow(df_v)
                                 
                             fig_bar = go.Figure()
-                            fig_bar.add_trace(go.Bar(x=ms['Month_Year'], y=ms['True Income'], name='Income', marker_color='#2ecc71', offsetgroup=0))
-                            fig_bar.add_trace(go.Bar(x=ms['Month_Year'], y=ms['Committed Expense'], name='Committed Baseline', marker_color='#8b0000', offsetgroup=1))
-                            fig_bar.add_trace(go.Bar(x=ms['Month_Year'], y=ms['Variable Expense'], name='Variable Lifestyle', marker_color='#f39c12', offsetgroup=1, base=ms['Committed Expense']))
+                            fig_bar.add_trace(go.Bar(x=ms['Month_Year'], y=ms['True Income'], name='Income', marker_color=CHART_COLORS['income'], offsetgroup=0))
+                            fig_bar.add_trace(go.Bar(x=ms['Month_Year'], y=ms['Committed Expense'], name='Committed Baseline', marker_color=CHART_COLORS['committed'], offsetgroup=1))
+                            fig_bar.add_trace(go.Bar(x=ms['Month_Year'], y=ms['Variable Expense'], name='Variable Lifestyle', marker_color=CHART_COLORS['variable'], offsetgroup=1, base=ms['Committed Expense']))
                             
                             fig_bar.update_layout(title='Monthly Cash Flow (Baseline vs Lifestyle)', barmode='group', xaxis_title="Month", yaxis_title="Amount (£)")
                             st.plotly_chart(fig_bar, use_container_width=True)
@@ -1240,10 +1270,9 @@ elif app_page == "📊 Dashboard":
                                 st.caption("Compares your **True Income** (green) against your expenses. Your **Variable Lifestyle** (orange) sits stacked on top of your **Committed Baseline** (red) so you can easily see if your total outbound cash exceeded your income for the month.")
                             
                         elif chart == 'cumulative':
-                            df_daily = df_v.groupby('Date').apply(lambda x: x[x['Spend_Type']=='True Income']['Amount'].sum() - x[x['Spend_Type'].str.contains('Expense')]['Amount'].sum()).reset_index(name='Net')
-                            df_daily['Cumulative'] = df_daily['Net'].cumsum()
+                            df_daily = get_cumulative_wealth(df_v)
                             fig_cum = px.line(df_daily, x='Date', y='Cumulative', title='Cumulative Wealth Trajectory')
-                            fig_cum.update_traces(line_color='#3498db', fill='tozeroy')
+                            fig_cum.update_traces(line_color=CHART_COLORS['cumulative'], fill='tozeroy')
                             st.plotly_chart(fig_cum, use_container_width=True)
                             st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the Data Editor tab)*")
                             
@@ -1251,11 +1280,10 @@ elif app_page == "📊 Dashboard":
                                 st.caption("Tracks your Net Flow (Income minus Expenses) day by day. An **upward trend** means you are retaining cash and building wealth. A **downward trend** means you are spending more than you earn.")
                             
                         elif chart == 'categories':
-                            exp_df = df_v[df_v['Spend_Type'].str.contains('Expense')]
-                            top_cats = exp_df.groupby('Category')['Amount'].sum().nlargest(10).reset_index()
+                            top_cats = get_top_expenses_by_col(df_v, 'Category')
                             fig_cat = px.bar(top_cats, x='Amount', y='Category', orientation='h', title='Top 10 Expense Categories')
                             fig_cat.update_layout(yaxis={'categoryorder':'total ascending'})
-                            fig_cat.update_traces(marker_color='#9b59b6')
+                            fig_cat.update_traces(marker_color=CHART_COLORS['category'])
                             st.plotly_chart(fig_cat, use_container_width=True)
                             st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the Data Editor tab)*")
                             
@@ -1263,11 +1291,10 @@ elif app_page == "📊 Dashboard":
                                 st.caption("Ranks your highest spending categories. This strictly isolates your **Expenses** (actively ignoring internal transfers and income) to show you exactly where the bulk of your money is going.")
                             
                         elif chart == 'merchants':
-                            exp_df = df_v[df_v['Spend_Type'].str.contains('Expense')]
-                            top_merch = exp_df.groupby('Name')['Amount'].sum().nlargest(10).reset_index()
+                            top_merch = get_top_expenses_by_col(df_v, 'Name')
                             fig_merch = px.bar(top_merch, x='Amount', y='Name', orientation='h', title='Top 10 Merchants (Spend)')
                             fig_merch.update_layout(yaxis={'categoryorder':'total ascending'})
-                            fig_merch.update_traces(marker_color='#e67e22')
+                            fig_merch.update_traces(marker_color=CHART_COLORS['merchant'])
                             st.plotly_chart(fig_merch, use_container_width=True)
                             st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the Data Editor tab)*")
                             
@@ -1275,10 +1302,8 @@ elif app_page == "📊 Dashboard":
                                 st.caption("Highlights the specific shops, services, or merchants taking the biggest chunk of your money. This is incredibly helpful for spotting expensive habits or costly subscriptions.")
                             
                         elif chart == 'sunburst':
-                            exp_df = df_v[df_v['Spend_Type'].str.contains('Expense')].copy()
-                            exp_df['Category'] = exp_df['Category'].replace('', 'Uncategorized').fillna('Uncategorized')
-                            exp_df = exp_df[exp_df['Amount'] > 0]
-                            fig_sun = px.sunburst(exp_df, path=['Bank', 'Category'], values='Amount', title='Expense Breakdown (Bank > Category)')
+                            exp_df_sun = get_sunburst_data(df_v)
+                            fig_sun = px.sunburst(exp_df_sun, path=['Bank', 'Category'], values='Amount', title='Expense Breakdown (Bank > Category)')
                             st.plotly_chart(fig_sun, use_container_width=True)
                             st.caption("*(Accessibility Note: Raw tabular data for this chart is available in the Data Editor tab)*")
                             
