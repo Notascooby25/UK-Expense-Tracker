@@ -1383,6 +1383,46 @@ elif app_page == "🧠 Intelligence":
             
     st.divider()
     
+    st.subheader("🤖 Auto-Tag Subscriptions (Smart Keyword Scan)")
+    st.caption("Scan your entire existing database against the smart keyword dictionary to retroactively flag missing subscriptions.")
+    
+    if st.button("🔍 Scan Database for Subscriptions"):
+        if not st.session_state.df.empty:
+            df = st.session_state.df
+            candidates_idx = []
+            for idx, row in df.iterrows():
+                if not row.get('Is_Subscription', False):
+                    name = str(row.get('Name', '')).lower()
+                    notes = str(row.get('Notes', '')).lower()
+                    for keyword in SMART_SUBSCRIPTION_KEYWORDS:
+                        if keyword in name or keyword in notes:
+                            candidates_idx.append(idx)
+                            break
+                            
+            if candidates_idx:
+                cand_df = df.loc[candidates_idx]
+                st.session_state.subscription_candidates = sorted(list(cand_df['Name'].unique()))
+            else:
+                st.info("No unflagged subscriptions found! Your database is up to date.")
+                st.session_state.pop("subscription_candidates", None)
+                
+    if "subscription_candidates" in st.session_state:
+        cands = st.session_state.subscription_candidates
+        st.success(f"Found {len(cands)} distinct merchants that look like subscriptions!")
+        
+        approved_subs = st.multiselect("Check and confirm which ones to flag as subscriptions:", options=cands, default=cands)
+        
+        if st.button("✅ Apply Subscription Flags"):
+            if approved_subs:
+                mask = st.session_state.df['Name'].isin(approved_subs)
+                st.session_state.df.loc[mask, 'Is_Subscription'] = True
+                save_database(show_success=False)
+                st.session_state.pop("subscription_candidates", None)
+                st.toast("✅ Subscriptions updated successfully!")
+                st.rerun()
+
+    st.divider()
+    
     st.subheader("🧹 Category Standardisation")
     if not st.session_state.df.empty:
         other_bank_df = st.session_state.df[st.session_state.df['Bank'] != 'Monzo']
