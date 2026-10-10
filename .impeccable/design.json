@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-10T17:46:27Z",
+  "title": "Design System: UK Expense Tracker",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Crimson Action", "canonical": "#e74c3c", "tonalRamp": ["#fdf2f0", "#fadcd9", "#f5b7b1", "#f19289", "#ec6d62", "#e74c3c", "#c93d2d", "#aa3123"] },
+      "neutral-bg": { "role": "neutral", "displayName": "Deep Slate", "canonical": "#263238", "tonalRamp": ["#eceff1", "#cfd8dc", "#b0bec5", "#90a4ae", "#78909c", "#607d8b", "#546e7a", "#455a64", "#37474f", "#263238"] },
+      "neutral-bg-secondary": { "role": "neutral", "displayName": "Container Dark Slate", "canonical": "#1b262c", "tonalRamp": ["#eef0f1", "#d5d9dc", "#b7c0c5", "#98a6ad", "#7e8f98", "#647883", "#576973", "#495962", "#3a474f", "#1b262c"] }
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Used aggressively for critical actions.",
+      "html": "<button class=\"ds-btn-primary\">Save Changes</button>",
+      "css": ".ds-btn-primary { background: #e74c3c; color: #ffffff; padding: 8px 16px; font-family: sans-serif; font-size: 16px; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; transition: filter 0.2s; } .ds-btn-primary:hover { filter: brightness(1.1); }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Standard data entry field on dark background.",
+      "html": "<input type=\"text\" class=\"ds-input-field\" placeholder=\"Enter amount...\" />",
+      "css": ".ds-input-field { background: #1b262c; color: #ffffff; padding: 10px 12px; font-family: sans-serif; font-size: 16px; border: 1px solid #37474f; border-radius: 8px; outline: none; transition: border-color 0.2s; } .ds-input-field:focus { border-color: #e74c3c; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Command Center",
+    "overview": "The UK Expense Tracker is a focused, high-contrast, data-dense application designed for rapid scanning and operation. It eschews unnecessary ornamentation in favor of a sleek, modern, and punchy aesthetic, aggressively using color to highlight key actions and semantic meaning.",
+    "keyCharacteristics": [
+      "High data density over whitespace.",
+      "Semantic chart colors that carry strict financial meaning.",
+      "Nocturnal, deep slate canvas to reduce eye strain during intensive data analysis.",
+      "Utilitarian component language optimized for fast, reliable data entry."
+    ],
+    "rules": [
+      { "name": "The Strict Semantic Rule", "body": "Financial chart colors are not decorative. Green is always income, Dark Red is always committed spend, and Orange is always variable spend.", "section": "colors" },
+      { "name": "The Flat Structure Rule", "body": "No drop shadows or ambient depth. Hierarchy is established purely through background contrast and spacing.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use #e74c3c aggressively for the most important action on a screen.",
+      "Do map financial data rigidly to the established Income/Committed/Variable chart colors.",
+      "Do rely on background color contrast (#1b262c on #263238) to define sections."
+    ],
+    "donts": [
+      "Don't introduce new chart colors for income or basic spend types; stick to the semantic palette.",
+      "Don't use drop shadows to separate cards or containers.",
+      "Don't sacrifice data density for whitespace; the user values seeing more rows over spacious layouts."
+    ]
+  }
+}
