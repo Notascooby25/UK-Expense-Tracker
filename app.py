@@ -52,7 +52,7 @@ DB_FILE = ""
 SETTINGS_FILE = ""
 FILTER_FILE = ""
 LOGO_FILE = os.path.join(ASSETS_DIR, os.getenv("EXPENSE_TRACKER_LOGO_FILE", "logo.png"))
-COLS = ['Date', 'Name', 'Amount', 'Transaction_Type', 'Bank', 'Category', 'Notes', 'Financial_Year']
+COLS = ['Date', 'Name', 'Amount', 'Transaction_Type', 'Bank', 'Category', 'Notes', 'Financial_Year', 'Is_Subscription']
 
 def is_truthy(value):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
@@ -162,20 +162,17 @@ SMART_SUBSCRIPTION_KEYWORDS = [
 def apply_smart_dictionary(df):
     if df.empty: return df
     df = df.copy()
-    if 'Category' not in df.columns:
-        df['Category'] = ""
+    if 'Is_Subscription' not in df.columns:
+        df['Is_Subscription'] = False
         
     for idx, row in df.iterrows():
-        cat = str(row.get('Category', '')).strip()
-        # Apply if category is empty, or a generic placeholder
-        if not cat or cat in ['Miscellaneous', 'Unknown', 'Finances', 'General']:
-            name = str(row.get('Name', '')).lower()
-            notes = str(row.get('Notes', '')).lower()
-            
-            for keyword in SMART_SUBSCRIPTION_KEYWORDS:
-                if keyword in name or keyword in notes:
-                    df.at[idx, 'Category'] = 'Subscriptions'
-                    break
+        name = str(row.get('Name', '')).lower()
+        notes = str(row.get('Notes', '')).lower()
+        
+        for keyword in SMART_SUBSCRIPTION_KEYWORDS:
+            if keyword in name or keyword in notes:
+                df.at[idx, 'Is_Subscription'] = True
+                break
     return df
 def apply_auto_rules(df):
     rules = st.session_state.app_settings.get("auto_rules", [])
@@ -395,6 +392,11 @@ def load_data():
             if col in df.columns:
                 df[col] = df[col].fillna("").astype(str).apply(clean_string)
                 
+        if 'Is_Subscription' not in df.columns:
+            df['Is_Subscription'] = False
+        else:
+            df['Is_Subscription'] = df['Is_Subscription'].fillna(False).astype(bool)
+            
         st.session_state.df = df
     else:
         st.session_state.df = pd.DataFrame(columns=COLS)
@@ -791,7 +793,8 @@ app_page = st.sidebar.radio("📱 Navigation", [
 
 table_format = {
     "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
-    "Amount": st.column_config.NumberColumn("Amount", format="£%.2f")
+    "Amount": st.column_config.NumberColumn("Amount", format="£%.2f"),
+    "Is_Subscription": st.column_config.CheckboxColumn("Subscription?")
 }
 
 # === PAGE 1: ADD & SYNC ===
@@ -803,7 +806,7 @@ if app_page == "📝 Add & Sync":
             editor_format = table_format.copy()
             editor_format["Category"] = st.column_config.SelectboxColumn("Category", options=master_cats)
             editor_format["Notes"] = st.column_config.TextColumn("Notes")
-            disabled_cols = [c for c in COLS if c not in ["Category", "Notes"]]
+            disabled_cols = [c for c in COLS if c not in ["Category", "Notes", "Is_Subscription"]]
             
             edited_new_rows = st.data_editor(
                 st.session_state.new_sync_rows,
@@ -1180,14 +1183,15 @@ elif app_page == "📊 Dashboard":
                 merch_drill = drill_df.groupby(['Name', 'Transaction_Type']).agg(
                     Total_Amount=('Amount', 'sum'),
                     Transactions=('Amount', 'count'),
-                    Last_Date=('Date', 'max')
+                    Last_Date=('Date', 'max'),
+                    Is_Subscription=('Is_Subscription', 'any')
                 ).reset_index()
                 merch_drill = merch_drill.sort_values(by='Total_Amount', ascending=False)
                 merch_drill['Last_Date'] = merch_drill['Last_Date'].dt.strftime('%d/%m/%Y')
                 st.dataframe(merch_drill, use_container_width=True, hide_index=True, height=(len(merch_drill) * 35) + 38)
                 
                 st.markdown("**Individual Transactions**")
-                raw_drill = drill_df[['Date', 'Name', 'Amount', 'Transaction_Type', 'Notes']].copy()
+                raw_drill = drill_df[['Date', 'Name', 'Amount', 'Transaction_Type', 'Notes', 'Is_Subscription']].copy()
                 raw_drill = raw_drill.sort_values(by='Date', ascending=False)
                 raw_drill['Date'] = raw_drill['Date'].dt.strftime('%d/%m/%Y')
                 st.dataframe(raw_drill, use_container_width=True, hide_index=True, height=(len(raw_drill) * 35) + 38)
