@@ -9,7 +9,7 @@ This project runs locally on a NUC using Docker and Watchtower.
 
 **Important AI Rule:**
 Whenever making code changes (`app.py`, etc.), always do the following:
-1. Run `git commit` and `git push` for the user to trigger the GitHub Actions build.
+1. Run `git commit` with an appropriate, descriptive commit message explaining what changed and why, then run `git push` for the user to trigger the GitHub Actions build.
 2. Remind the user that changes will NOT be visible in their live app until the GitHub Action finishes building the image (takes ~2 minutes).
 3. Since Watchtower on their NUC only polls every 24 hours, provide the user with the following exact snippet so they can instantly apply the update on their NUC via SSH:
    ```bash

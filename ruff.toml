@@ -1,0 +1,35 @@
+# Ruff configuration
+# Reference: https://docs.astral.sh/ruff/configuration/
+
+line-length = 100
+indent-width = 4
+target-version = "py311"
+
+# Exclude scratch/temporary test directories and virtual environments
+exclude = [
+    ".git",
+    ".history",
+    "venv",
+    ".venv",
+    "__pycache__",
+    "scratch_tests",
+    "Working back up database & APP- testing",
+]
+
+[lint]
+# Select common critical error checks (syntax/undefined variables/broken code)
+# F: Pyflakes (catches undefined variables, syntax issues)
+# E9: Runtime errors (syntax errors, indentation errors)
+select = ["E9", "F63", "F7", "F82"]
+
+# Ignore stylistic single-line statement warnings so existing working code is not broken
+ignore = ["E701"]
+
+fixable = ["ALL"]
+unfixable = []
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
