@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import os
 import json
@@ -250,7 +250,7 @@ if not st.session_state.authenticated:
             if username == valid_user and password == valid_pass:
                 st.session_state.authenticated = True
                 if remember_me:
-                    cookie_controller.set('uk_expense_auth', 'true', max_age=30*24*60*60) # 30 days
+                    cookie_controller.set('uk_expense_auth', 'true', max_age=30*24*60*60, expires=datetime.now() + timedelta(days=30)) # 30 days
                 else:
                     # Session cookie (expires on browser close)
                     cookie_controller.set('uk_expense_auth', 'true')
