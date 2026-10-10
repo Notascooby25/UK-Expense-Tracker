@@ -1519,12 +1519,21 @@ elif app_page == "⚙️ Data Editor":
             
             edited_df = st.data_editor(df_edit, use_container_width=True, height=de_pixel_height, num_rows="dynamic", column_config=table_format)
             
-            btn_col1, btn_col2 = st.columns(2)
+            btn_col1, btn_col2, btn_col3 = st.columns(3)
             with btn_col1:
                 commit_pressed = st.button(" Commit Table Edits", use_container_width=True, key="commit_table")
             with btn_col2:
                 save_pressed = st.button(" Save Data to Disk", use_container_width=True, key="save_table_disk")
+            with btn_col3:
+                mark_subs_pressed = st.button("🔄 Mark Filtered as Subs", use_container_width=True)
                 
+            if mark_subs_pressed:
+                if not df_edit.empty:
+                    st.session_state.df.loc[df_edit.index, 'Is_Subscription'] = True
+                    save_database(show_success=False)
+                    st.toast("✅ Marked filtered rows as subscriptions!")
+                    st.rerun()
+                    
             if commit_pressed:
                 if is_filtered:
                     st.session_state.df.update(edited_df)
@@ -1572,9 +1581,10 @@ elif app_page == "⚙️ Data Editor":
                 label_to_idx = {f"ID:{idx} | {row['Date'].strftime('%d/%m/%Y')} | {row['Name']} | £{row['Amount']}": idx for idx, row in bulk_df.iterrows()}
                 selected_labels = st.multiselect("Select specific rows to update:", options=list(label_to_idx.keys()))
 
-                act_col1, act_col2 = st.columns(2)
+                act_col1, act_col2, act_col3 = st.columns(3)
                 new_bulk_cat = act_col1.selectbox("Set Category to:", ["No Change"] + master_cats)
                 new_bulk_type = act_col2.selectbox("Set Type to:", ["No Change", "Expense", "Income"])
+                new_bulk_sub = act_col3.selectbox("Set Subscription to:", ["No Change", "True", "False"])
 
                 cmd_col1, cmd_col2 = st.columns(2)
                 with cmd_col1:
@@ -1583,6 +1593,7 @@ elif app_page == "⚙️ Data Editor":
                         if selected_indices:
                             if new_bulk_cat != "No Change": st.session_state.df.loc[selected_indices, 'Category'] = new_bulk_cat
                             if new_bulk_type != "No Change": st.session_state.df.loc[selected_indices, 'Transaction_Type'] = new_bulk_type
+                            if new_bulk_sub != "No Change": st.session_state.df.loc[selected_indices, 'Is_Subscription'] = (new_bulk_sub == "True")
                             save_database(show_success=False)
                             st.toast(f"✅ Updated {len(selected_indices)} rows and saved to disk!")
                             st.rerun()
