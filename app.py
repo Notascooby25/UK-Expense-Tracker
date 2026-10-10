@@ -149,6 +149,34 @@ def get_matching_auto_rule(row, rules=None):
     return None, None
 
 
+SMART_SUBSCRIPTION_KEYWORDS = [
+    'netflix', 'spotify', 'amazon prime', 'amznprime', 'amzn prm', 'nordvpn', 'expressvpn', 
+    'surfshark', 'gym', 'puregym', 'the gym group', 'nuffield health', 'david lloyd', 
+    'hellofresh', 'gousto', 'disney plus', 'disney+', 'apple.com/bill', 
+    'google play', 'youtube premium', 'patreon', 'adobe', 'microsoft 365', 
+    'dropbox', 'icloud', 'squarespace', 'wix', 'aws', 'digitalocean',
+    'strava', 'zwift', 'peloton', 'playstation', 'xbox live', 'nintendo', 
+    'crunchyroll', 'audible', 'deliveroo plus', 'uber one'
+]
+
+def apply_smart_dictionary(df):
+    if df.empty: return df
+    df = df.copy()
+    if 'Category' not in df.columns:
+        df['Category'] = ""
+        
+    for idx, row in df.iterrows():
+        cat = str(row.get('Category', '')).strip()
+        # Apply if category is empty, or a generic placeholder
+        if not cat or cat in ['Miscellaneous', 'Unknown', 'Finances', 'General']:
+            name = str(row.get('Name', '')).lower()
+            notes = str(row.get('Notes', '')).lower()
+            
+            for keyword in SMART_SUBSCRIPTION_KEYWORDS:
+                if keyword in name or keyword in notes:
+                    df.at[idx, 'Category'] = 'Subscriptions'
+                    break
+    return df
 def apply_auto_rules(df):
     rules = st.session_state.app_settings.get("auto_rules", [])
     if not rules or df.empty:
@@ -408,8 +436,8 @@ if 'initialized' not in st.session_state:
 pure_monzo_cats = set(st.session_state.df[st.session_state.df['Bank'] == 'Monzo']['Category'].dropna().unique())
 pure_monzo_cats = {c for c in pure_monzo_cats if c and c not in ['Miscellaneous', 'Unknown', '']}
 custom_cats = set(st.session_state.app_settings.get("custom_categories", []))
-master_cats = sorted(list(pure_monzo_cats.union(custom_cats)))
-if not master_cats: master_cats = ['Savings', 'Groceries', 'Utilities', 'Travel', 'Miscellaneous']
+master_cats = sorted(list(pure_monzo_cats.union(custom_cats).union({'Subscriptions'})))
+if not master_cats: master_cats = ['Savings', 'Groceries', 'Utilities', 'Travel', 'Miscellaneous', 'Subscriptions']
 master_banks = sorted(list(set(st.session_state.df['Bank'].dropna().unique()).union(set(st.session_state.app_settings.get("custom_banks", [])))))
 
 def process_new_data(new_df, source_format="Auto-Detect"):
@@ -474,6 +502,7 @@ def process_new_data(new_df, source_format="Auto-Detect"):
         new_df['Name'] = new_df['Name'].apply(clean_string)
         new_df['Category'] = new_df['Category'].apply(clean_string)
         new_df['Transaction_Type'] = new_df['Transaction_Type'].apply(clean_string)
+        new_df = apply_smart_dictionary(new_df)
         new_df = apply_auto_rules(new_df)
 
         matched_indexes = set()
