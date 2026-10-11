@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   RotateCcw,
   TrendingUp,
@@ -11,6 +11,9 @@ import {
   ExternalLink,
   PieChart as PieIcon,
   Layers,
+  Calendar,
+  CalendarDays,
+  RefreshCw,
 } from 'lucide-react';
 import {
   BarChart,
@@ -33,22 +36,40 @@ interface DashboardPageProps {
   onNavigateToTransactions: (prefilterCategory?: string) => void;
 }
 
+const MONTH_OPTIONS = [
+  { short: 'Jan', full: 'January' },
+  { short: 'Feb', full: 'February' },
+  { short: 'Mar', full: 'March' },
+  { short: 'Apr', full: 'April' },
+  { short: 'May', full: 'May' },
+  { short: 'Jun', full: 'June' },
+  { short: 'Jul', full: 'July' },
+  { short: 'Aug', full: 'August' },
+  { short: 'Sep', full: 'September' },
+  { short: 'Oct', full: 'October' },
+  { short: 'Nov', full: 'November' },
+  { short: 'Dec', full: 'December' },
+];
+
 export const DashboardPage: React.FC<DashboardPageProps> = ({
   scope,
   masterCategories,
   onNavigateToTransactions,
 }) => {
+  const currentYear = new Date().getFullYear().toString();
+  const currentMonthName = new Date().toLocaleString('en-US', { month: 'long' });
+
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardPayload | null>(null);
 
-  // Filters state
-  const [timeMode, setTimeMode] = useState('Financial Year');
-  const [selectedPeriod, setSelectedPeriod] = useState('All');
+  // Filters state - Default to current calendar year and current month
+  const [timeMode, setTimeMode] = useState<'Financial Year' | 'Calendar Year' | 'Rolling Period'>('Calendar Year');
+  const [selectedPeriod, setSelectedPeriod] = useState(currentYear);
   const [bank, setBank] = useState('All Banks');
   const [hideInternal, setHideInternal] = useState(true);
   const [netSpendMode, setNetSpendMode] = useState(false);
   const [ignoreLegacy, setIgnoreLegacy] = useState(true);
-  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([currentMonthName]);
   const [includeCategories, setIncludeCategories] = useState<string[]>([]);
   const [excludeCategories, setExcludeCategories] = useState<string[]>([]);
 
@@ -68,7 +89,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [showTopMerchChart, setShowTopMerchChart] = useState(false);
   const [showBankCatChart, setShowBankCatChart] = useState(false);
 
+  // Request ID refs to completely eliminate async race condition overwrites
+  const latestRequestIdRef = useRef(0);
+  const latestDrilldownIdRef = useRef(0);
+
   const fetchDashboard = async () => {
+    const reqId = ++latestRequestIdRef.current;
     setLoading(true);
     try {
       const res = await api.getDashboard(scope, {
@@ -82,18 +108,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         include_categories: includeCategories,
         exclude_categories: excludeCategories,
       });
-      setData(res);
-      if (inspectCategory) {
-        loadDrilldown(inspectCategory);
+      // Only commit data if this is still the most recently triggered request
+      if (reqId === latestRequestIdRef.current) {
+        setData(res);
+        if (inspectCategory) {
+          loadDrilldown(inspectCategory);
+        }
       }
     } catch (err) {
-      console.error('Failed to load dashboard', err);
+      if (reqId === latestRequestIdRef.current) {
+        console.error('Failed to load dashboard', err);
+      }
     } finally {
-      setLoading(false);
+      if (reqId === latestRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   const loadDrilldown = async (cat: string) => {
+    const reqId = ++latestDrilldownIdRef.current;
     setInspectCategory(cat);
     setDrilldownLoading(true);
     try {
@@ -108,11 +142,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         include_categories: includeCategories,
         exclude_categories: excludeCategories,
       });
-      setDrilldown(res);
+      if (reqId === latestDrilldownIdRef.current) {
+        setDrilldown(res);
+      }
     } catch (err) {
-      console.error('Failed to load category drilldown', err);
+      if (reqId === latestDrilldownIdRef.current) {
+        console.error('Failed to load category drilldown', err);
+      }
     } finally {
-      setDrilldownLoading(false);
+      if (reqId === latestDrilldownIdRef.current) {
+        setDrilldownLoading(false);
+      }
     }
   };
 
@@ -131,19 +171,49 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     excludeCategories,
   ]);
 
+  const handleToggleMonth = (monthFull: string, event: React.MouseEvent) => {
+    if (event.altKey) {
+      // Alt-click isolates single month
+      setSelectedMonths([monthFull]);
+      return;
+    }
+    setSelectedMonths((prev) => {
+      // If no months are filtered (full year), clicking one isolates it
+      if (prev.length === 0) {
+        return [monthFull];
+      }
+      if (prev.includes(monthFull)) {
+        return prev.filter((m) => m !== monthFull && m !== monthFull.slice(0, 3));
+      } else {
+        return [...prev, monthFull];
+      }
+    });
+  };
+
+  const handleSelectLast3Months = () => {
+    const curIdx = new Date().getMonth();
+    const last3 = [
+      MONTH_OPTIONS[(curIdx - 2 + 12) % 12].full,
+      MONTH_OPTIONS[(curIdx - 1 + 12) % 12].full,
+      MONTH_OPTIONS[curIdx].full,
+    ];
+    setSelectedMonths(last3);
+  };
+
   const handleResetFilters = () => {
-    setTimeMode('Financial Year');
-    setSelectedPeriod('All');
+    setTimeMode('Calendar Year');
+    setSelectedPeriod(currentYear);
+    setSelectedMonths([currentMonthName]);
     setBank('All Banks');
     setHideInternal(true);
     setNetSpendMode(false);
     setIgnoreLegacy(true);
-    setSelectedMonths([]);
     setIncludeCategories([]);
     setExcludeCategories([]);
     setInspectCategory(null);
     setDrilldown(null);
   };
+
 
   const metrics = data?.metrics || {
     total_income: 0,
@@ -162,8 +232,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     timeMode === 'Financial Year'
       ? data?.filter_options.financial_years || ['All']
       : timeMode === 'Calendar Year'
-        ? data?.filter_options.calendar_years || ['All']
-        : data?.filter_options.rolling_periods || ['Last 3 Months'];
+        ? (data?.filter_options.calendar_years?.includes(currentYear)
+            ? data.filter_options.calendar_years
+            : [currentYear, ...(data?.filter_options.calendar_years || ['All'])])
+        : data?.filter_options.rolling_periods || ['This Month', 'Last 3 Months', 'Last 6 Months', 'Last 12 Months'];
 
   const hypotheticalSalary =
     typeof whatIfSalary === 'number' && whatIfSalary > 0 ? whatIfSalary : metrics.avg_income;
@@ -183,7 +255,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   type="button"
                   onClick={() => {
                     setTimeMode(m);
-                    setSelectedPeriod(m === 'Rolling Period' ? 'Last 3 Months' : 'All');
+                    if (m === 'Rolling Period') {
+                      setSelectedPeriod('This Month');
+                      setSelectedMonths([]);
+                    } else if (m === 'Calendar Year') {
+                      setSelectedPeriod(currentYear);
+                      setSelectedMonths([currentMonthName]);
+                    } else {
+                      setSelectedPeriod('All');
+                      setSelectedMonths([]);
+                    }
                   }}
                   className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
                     timeMode === m
@@ -265,6 +346,74 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Month Selection Toolbar (Visible when Calendar Year is active) */}
+        {timeMode === 'Calendar Year' && (
+          <div className="pt-2.5 mt-2.5 border-t border-[#d6dfe5] dark:border-[#32424a] flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-[#485b69] dark:text-[#b0bec5] mr-1 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-cyan-500" />
+                <span>Months:</span>
+              </span>
+
+              {MONTH_OPTIONS.map((m) => {
+                const isSelected = selectedMonths.includes(m.full) || selectedMonths.includes(m.short);
+                return (
+                  <button
+                    key={m.short}
+                    type="button"
+                    onClick={(e) => handleToggleMonth(m.full, e)}
+                    className={`px-2 py-0.5 text-[11px] font-semibold rounded-md transition-colors ${
+                      isSelected
+                        ? 'bg-cyan-600 text-white shadow-sm'
+                        : 'bg-[#eef2f5] dark:bg-[#202d35] text-[#485b69] dark:text-[#b0bec5] hover:text-[#121a21] dark:hover:text-white border border-[#d6dfe5] dark:border-[#32424a]'
+                    }`}
+                    title={`Toggle ${m.full} (Alt+click to view only ${m.full})`}
+                  >
+                    {m.short}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick Presets & Status */}
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="text-slate-400 font-mono text-[10px] hidden sm:inline">
+                {selectedMonths.length === 0
+                  ? `Full Year ${selectedPeriod}`
+                  : selectedMonths.length === 1
+                    ? `${selectedMonths[0]} (Single Month)`
+                    : `${selectedMonths.length} Months Selected (${selectedMonths.map((m) => m.slice(0, 3)).join(', ')})`}
+              </span>
+
+              <div className="flex items-center gap-1.5 border-l border-slate-700 pl-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedMonths([currentMonthName])}
+                  className="px-2 py-0.5 rounded font-medium text-cyan-600 dark:text-cyan-400 hover:bg-cyan-950/30 transition-colors"
+                >
+                  This Month
+                </button>
+                <span className="text-[#32424a]">•</span>
+                <button
+                  type="button"
+                  onClick={handleSelectLast3Months}
+                  className="px-2 py-0.5 rounded font-medium text-cyan-600 dark:text-cyan-400 hover:bg-cyan-950/30 transition-colors"
+                >
+                  Last 3 Months
+                </button>
+                <span className="text-[#32424a]">•</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMonths([])}
+                  className="px-2 py-0.5 rounded font-medium text-[#485b69] dark:text-[#b0bec5] hover:text-[#121a21] dark:hover:text-white transition-colors"
+                >
+                  All Year
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 2. KPI Metrics Grid */}
@@ -441,8 +590,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Column 1: Income Streams */}
+        <div className="relative">
+          {loading && (
+            <div className="absolute inset-0 bg-[#1b262c]/60 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-lg">
+              <div className="flex items-center gap-2 text-xs font-semibold text-cyan-400 bg-[#263238] px-3.5 py-2 rounded-md border border-cyan-500/40 shadow-xl">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Calculating Cash Flow Breakdown...</span>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Column 1: Income Streams */}
           <div className="p-3 rounded-lg bg-[#f4f6f8] dark:bg-[#202d35] border border-[#d6dfe5] dark:border-[#32424a]">
             <div className="flex justify-between items-center mb-2">
               <span className="text-xs font-bold text-[#2ecc71]">Income Streams</span>
@@ -562,6 +721,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </div>
           </div>
         </div>
+      </div>
 
         {/* Drill-down Drawer / Detail Panel */}
         {inspectCategory && (

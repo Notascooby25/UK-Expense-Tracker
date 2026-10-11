@@ -191,6 +191,25 @@ def test_dashboard_and_category_drilldown(api_env):
     assert drill["merchants"][0]["Name"] == "Council Tax"
     assert len(drill["transactions"]) == 2
 
+    # Calendar Year with single month selection (February)
+    r_dash_feb = client.get(
+        "/api/dashboard?scope=Personal&time_mode=Calendar+Year&selected_period=2026&months=February"
+    )
+    assert r_dash_feb.status_code == 200
+    dash_feb = r_dash_feb.json()
+    assert dash_feb["metrics"]["months_in_period"] == 1
+    assert dash_feb["metrics"]["total_income"] == 3000.00
+    assert dash_feb["metrics"]["committed_expenses"] == 150.00
+    assert dash_feb["metrics"]["variable_expenses"] == 10.99
+
+    # Rolling Period with "This Month"
+    r_dash_tm = client.get(
+        "/api/dashboard?scope=Personal&time_mode=Rolling+Period&selected_period=This+Month"
+    )
+    assert r_dash_tm.status_code == 200
+    dash_tm = r_dash_tm.json()
+    assert "metrics" in dash_tm
+
 
 def test_transactions_filter_inline_edit_bulk_and_export(api_env):
     """Verify filtered inline edits preserve unfiltered rows, bulk actions save, and CSV exports."""

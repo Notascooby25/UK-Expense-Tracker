@@ -60,6 +60,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
   // Bulk selection states
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
 
   // Save indicator / status
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -257,18 +258,40 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const handleSelectAllCurrentPage = () => {
     if (selectedIds.size === rows.length && rows.length > 0) {
       setSelectedIds(new Set());
+      setLastSelectedIndex(null);
     } else {
       setSelectedIds(new Set(rows.map((r) => r.row_id)));
     }
   };
 
-  const handleToggleSelectRow = (rowId: number) => {
+  const handleToggleSelectRow = (
+    rowId: number,
+    rowIndex: number,
+    event?: React.MouseEvent
+  ) => {
+    const isShift = Boolean(event?.shiftKey) && lastSelectedIndex !== null;
+
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(rowId)) next.delete(rowId);
-      else next.add(rowId);
+      if (isShift && lastSelectedIndex !== null) {
+        const start = Math.min(lastSelectedIndex, rowIndex);
+        const end = Math.max(lastSelectedIndex, rowIndex);
+        for (let i = start; i <= end; i++) {
+          if (rows[i]) {
+            next.add(rows[i].row_id);
+          }
+        }
+      } else {
+        if (next.has(rowId)) {
+          next.delete(rowId);
+        } else {
+          next.add(rowId);
+        }
+      }
       return next;
     });
+
+    setLastSelectedIndex(rowIndex);
   };
 
   const handleApplyBulkCategory = async () => {
@@ -674,7 +697,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => {
+                rows.map((row, idx) => {
                   const isSelected = selectedIds.has(row.row_id);
                   const isIncome = row.Transaction_Type === 'Income';
 
@@ -690,7 +713,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => handleToggleSelectRow(row.row_id)}
+                          onClick={(e) => handleToggleSelectRow(row.row_id, idx, e)}
+                          onChange={() => {}}
                           className="rounded border-slate-600 bg-slate-800 text-cyan-600 focus:ring-0 cursor-pointer"
                         />
                       </td>

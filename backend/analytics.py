@@ -22,6 +22,7 @@ from cashflow_utils import (
 )
 
 ROLLING_OPTIONS = {
+    "This Month": 1,
     "Last 3 Months": 3,
     "Last 6 Months": 6,
     "Last 12 Months": 12,
@@ -102,10 +103,16 @@ def prepare_filtered_dashboard_df(
     selected_period = str(filters.get("selected_period", "All"))
 
     if time_mode == "Rolling Period":
-        months_back = ROLLING_OPTIONS.get(selected_period, 3)
-        cutoff = pd.Timestamp.now().normalize() - pd.DateOffset(months=months_back)
-        if not df_v.empty:
-            df_v = df_v[df_v["Date"] >= cutoff]
+        if selected_period == "This Month":
+            now = pd.Timestamp.now().normalize()
+            cutoff = now.replace(day=1)
+            if not df_v.empty:
+                df_v = df_v[df_v["Date"] >= cutoff]
+        else:
+            months_back = ROLLING_OPTIONS.get(selected_period, 3)
+            cutoff = pd.Timestamp.now().normalize() - pd.DateOffset(months=months_back)
+            if not df_v.empty:
+                df_v = df_v[df_v["Date"] >= cutoff]
     else:
         target_col = "Calendar_Year" if time_mode == "Calendar Year" else "Financial_Year"
         if selected_period and selected_period != "All" and not df_v.empty:
@@ -117,7 +124,10 @@ def prepare_filtered_dashboard_df(
 
     selected_months = filters.get("months") or []
     if time_mode == "Calendar Year" and selected_months and not df_v.empty:
-        df_v = df_v[df_v["Date"].dt.strftime("%B").isin(selected_months)]
+        df_v = df_v[
+            df_v["Date"].dt.strftime("%B").isin(selected_months)
+            | df_v["Date"].dt.strftime("%b").isin(selected_months)
+        ]
 
     incl = filters.get("include_categories") or []
     if incl and not df_v.empty:
@@ -133,6 +143,8 @@ def prepare_filtered_dashboard_df(
                 selected_period, max(1, df_v["Month_Year"].nunique() if not df_v.empty else 1)
             )
         )
+    elif time_mode == "Calendar Year" and selected_months:
+        months_in_period = int(max(1, len(selected_months)))
     else:
         months_in_period = int(max(1, df_v["Month_Year"].nunique() if not df_v.empty else 1))
 
