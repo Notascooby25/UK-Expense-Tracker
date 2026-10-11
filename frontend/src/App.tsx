@@ -26,7 +26,7 @@ export const App: React.FC = () => {
   const [authenticated, setAuthenticated] = useState(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [requireSecrets, setRequireSecrets] = useState(false);
-  const [appVersion, setAppVersion] = useState<string>('0.6.0');
+  const [appVersion, setAppVersion] = useState<string>('0.6.1');
   const [changelog, setChangelog] = useState<ChangelogEntry[]>([]);
 
   // Scope & Theme state
@@ -242,6 +242,7 @@ export const App: React.FC = () => {
           <>
             {activePage === 'dashboard' && (
               <DashboardPage
+                key={scope}
                 scope={scope}
                 masterCategories={bootstrapData.master_categories}
                 onNavigateToTransactions={handleNavigateToTransactions}

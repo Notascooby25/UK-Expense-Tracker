@@ -58,6 +58,85 @@ const MONTH_OPTIONS = [
   { short: 'Dec', full: 'December' },
 ];
 
+interface DashboardSessionState {
+  timeMode: 'Financial Year' | 'Calendar Year' | 'Rolling Period';
+  selectedPeriod: string;
+  bank: string;
+  hideInternal: boolean;
+  netSpendMode: boolean;
+  ignoreLegacy: boolean;
+  excludeExceptional: boolean;
+  selectedMonths: string[];
+  includeCategories: string[];
+  excludeCategories: string[];
+  inspectCategory: string | null;
+}
+
+function getDashboardStorageKey(scope: AccountScope): string {
+  return `uk_expense_dashboard_state_${scope}`;
+}
+
+function loadSavedDashboardState(
+  scope: AccountScope,
+  defaultYear: string,
+  defaultMonth: string
+): DashboardSessionState {
+  const defaults: DashboardSessionState = {
+    timeMode: 'Calendar Year',
+    selectedPeriod: defaultYear,
+    bank: 'All Banks',
+    hideInternal: true,
+    netSpendMode: false,
+    ignoreLegacy: true,
+    excludeExceptional: true,
+    selectedMonths: [defaultMonth],
+    includeCategories: [],
+    excludeCategories: [],
+    inspectCategory: null,
+  };
+  try {
+    const raw = sessionStorage.getItem(getDashboardStorageKey(scope));
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as Partial<DashboardSessionState>;
+    return {
+      timeMode:
+        parsed.timeMode === 'Financial Year' ||
+        parsed.timeMode === 'Calendar Year' ||
+        parsed.timeMode === 'Rolling Period'
+          ? parsed.timeMode
+          : defaults.timeMode,
+      selectedPeriod:
+        typeof parsed.selectedPeriod === 'string' && parsed.selectedPeriod
+          ? parsed.selectedPeriod
+          : defaults.selectedPeriod,
+      bank: typeof parsed.bank === 'string' && parsed.bank ? parsed.bank : defaults.bank,
+      hideInternal:
+        typeof parsed.hideInternal === 'boolean' ? parsed.hideInternal : defaults.hideInternal,
+      netSpendMode:
+        typeof parsed.netSpendMode === 'boolean' ? parsed.netSpendMode : defaults.netSpendMode,
+      ignoreLegacy:
+        typeof parsed.ignoreLegacy === 'boolean' ? parsed.ignoreLegacy : defaults.ignoreLegacy,
+      excludeExceptional:
+        typeof parsed.excludeExceptional === 'boolean'
+          ? parsed.excludeExceptional
+          : defaults.excludeExceptional,
+      selectedMonths: Array.isArray(parsed.selectedMonths)
+        ? parsed.selectedMonths.filter((m): m is string => typeof m === 'string')
+        : defaults.selectedMonths,
+      includeCategories: Array.isArray(parsed.includeCategories)
+        ? parsed.includeCategories.filter((c): c is string => typeof c === 'string')
+        : defaults.includeCategories,
+      excludeCategories: Array.isArray(parsed.excludeCategories)
+        ? parsed.excludeCategories.filter((c): c is string => typeof c === 'string')
+        : defaults.excludeCategories,
+      inspectCategory:
+        typeof parsed.inspectCategory === 'string' ? parsed.inspectCategory : null,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
 export const DashboardPage: React.FC<DashboardPageProps> = ({
   scope,
   masterCategories,
@@ -66,27 +145,40 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const currentYear = new Date().getFullYear().toString();
   const currentMonthName = new Date().toLocaleString('en-US', { month: 'long' });
 
+  const [initialSession] = useState(() =>
+    loadSavedDashboardState(scope, currentYear, currentMonthName)
+  );
+
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardPayload | null>(null);
 
-  // Filters state - Default to current calendar year and current month
-  const [timeMode, setTimeMode] = useState<'Financial Year' | 'Calendar Year' | 'Rolling Period'>('Calendar Year');
-  const [selectedPeriod, setSelectedPeriod] = useState(currentYear);
-  const [bank, setBank] = useState('All Banks');
-  const [hideInternal, setHideInternal] = useState(true);
-  const [netSpendMode, setNetSpendMode] = useState(false);
-  const [ignoreLegacy, setIgnoreLegacy] = useState(true);
-  const [excludeExceptional, setExcludeExceptional] = useState(true);
-  const [selectedMonths, setSelectedMonths] = useState<string[]>([currentMonthName]);
-  const [includeCategories, setIncludeCategories] = useState<string[]>([]);
-  const [excludeCategories, setExcludeCategories] = useState<string[]>([]);
+  // Filters state - Default to current calendar year and current month on first session load,
+  // then persist across page switches within the active browser session
+  const [timeMode, setTimeMode] = useState<'Financial Year' | 'Calendar Year' | 'Rolling Period'>(
+    initialSession.timeMode
+  );
+  const [selectedPeriod, setSelectedPeriod] = useState(initialSession.selectedPeriod);
+  const [bank, setBank] = useState(initialSession.bank);
+  const [hideInternal, setHideInternal] = useState(initialSession.hideInternal);
+  const [netSpendMode, setNetSpendMode] = useState(initialSession.netSpendMode);
+  const [ignoreLegacy, setIgnoreLegacy] = useState(initialSession.ignoreLegacy);
+  const [excludeExceptional, setExcludeExceptional] = useState(initialSession.excludeExceptional);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(initialSession.selectedMonths);
+  const [includeCategories, setIncludeCategories] = useState<string[]>(
+    initialSession.includeCategories
+  );
+  const [excludeCategories, setExcludeCategories] = useState<string[]>(
+    initialSession.excludeCategories
+  );
 
   // What-If Calculator state
   const [showWhatIf, setShowWhatIf] = useState(false);
   const [whatIfSalary, setWhatIfSalary] = useState<number | ''>('');
 
   // Click-to-inspect Category Drilldown state
-  const [inspectCategory, setInspectCategory] = useState<string | null>(null);
+  const [inspectCategory, setInspectCategory] = useState<string | null>(
+    initialSession.inspectCategory
+  );
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const [drilldown, setDrilldown] = useState<CategoryDrilldownPayload | null>(null);
   const [drilldownError, setDrilldownError] = useState<string | null>(null);
@@ -178,6 +270,40 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   };
 
   useEffect(() => {
+    try {
+      const stateToSave: DashboardSessionState = {
+        timeMode,
+        selectedPeriod,
+        bank,
+        hideInternal,
+        netSpendMode,
+        ignoreLegacy,
+        excludeExceptional,
+        selectedMonths,
+        includeCategories,
+        excludeCategories,
+        inspectCategory,
+      };
+      sessionStorage.setItem(getDashboardStorageKey(scope), JSON.stringify(stateToSave));
+    } catch {
+      // ignore storage errors
+    }
+  }, [
+    scope,
+    timeMode,
+    selectedPeriod,
+    bank,
+    hideInternal,
+    netSpendMode,
+    ignoreLegacy,
+    excludeExceptional,
+    selectedMonths,
+    includeCategories,
+    excludeCategories,
+    inspectCategory,
+  ]);
+
+  useEffect(() => {
     fetchDashboard();
   }, [
     scope,
@@ -230,6 +356,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     setHideInternal(true);
     setNetSpendMode(false);
     setIgnoreLegacy(true);
+    setExcludeExceptional(true);
     setIncludeCategories([]);
     setExcludeCategories([]);
     setInspectCategory(null);

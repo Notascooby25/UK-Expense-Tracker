@@ -432,16 +432,16 @@ def test_transactions_filter_by_date_range_and_months(api_env):
 
 
 def test_version_and_changelog_exposed_in_auth_and_bootstrap(api_env):
-    """Verify /api/auth/status and /api/bootstrap expose version 0.6.0 and backfilled changelog."""
+    """Verify /api/auth/status and /api/bootstrap expose version 0.6.1 and backfilled changelog."""
     client = TestClient(app)
 
     r_status = client.get("/api/auth/status")
     assert r_status.status_code == 200
     status_data = r_status.json()
-    assert status_data["version"] == "0.6.0"
+    assert status_data["version"] == "0.6.1"
     assert "changelog" in status_data
-    assert len(status_data["changelog"]) == 6
-    assert status_data["changelog"][0]["version"] == "0.6.0"
+    assert len(status_data["changelog"]) == 7
+    assert status_data["changelog"][0]["version"] == "0.6.1"
     assert status_data["changelog"][-1]["version"] == "0.1.0"
 
     client.post(
@@ -451,5 +451,5 @@ def test_version_and_changelog_exposed_in_auth_and_bootstrap(api_env):
     r_boot = client.get("/api/bootstrap?scope=Personal")
     assert r_boot.status_code == 200
     boot_data = r_boot.json()
-    assert boot_data["version"] == "0.6.0"
+    assert boot_data["version"] == "0.6.1"
     assert boot_data["changelog"] == status_data["changelog"]

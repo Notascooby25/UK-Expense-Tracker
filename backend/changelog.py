@@ -4,9 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.6.1"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.6.1",
+        "date": "11 Oct 2026",
+        "title": "Dashboard Session Filter Memory",
+        "changes": [
+            "Preserved Dashboard time period, month selection, toggles, and open Category Inspector state across tab switches during the active session while still defaulting to the current month on initial app load.",
+        ],
+    },
     {
         "version": "0.6.0",
         "date": "11 Oct 2026",
