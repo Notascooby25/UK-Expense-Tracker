@@ -15,6 +15,7 @@ import {
   CalendarDays,
   RefreshCw,
   AlertCircle,
+  Zap,
 } from 'lucide-react';
 import {
   BarChart,
@@ -70,6 +71,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [hideInternal, setHideInternal] = useState(true);
   const [netSpendMode, setNetSpendMode] = useState(false);
   const [ignoreLegacy, setIgnoreLegacy] = useState(true);
+  const [excludeExceptional, setExcludeExceptional] = useState(true);
   const [selectedMonths, setSelectedMonths] = useState<string[]>([currentMonthName]);
   const [includeCategories, setIncludeCategories] = useState<string[]>([]);
   const [excludeCategories, setExcludeCategories] = useState<string[]>([]);
@@ -108,6 +110,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         hide_internal: hideInternal,
         net_spend_mode: netSpendMode,
         ignore_legacy: ignoreLegacy,
+        exclude_exceptional: excludeExceptional,
         months: selectedMonths,
         include_categories: includeCategories,
         exclude_categories: excludeCategories,
@@ -147,6 +150,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         hide_internal: hideInternal,
         net_spend_mode: netSpendMode,
         ignore_legacy: ignoreLegacy,
+        exclude_exceptional: excludeExceptional,
         months: selectedMonths,
         include_categories: includeCategories,
         exclude_categories: excludeCategories,
@@ -177,6 +181,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     hideInternal,
     netSpendMode,
     ignoreLegacy,
+    excludeExceptional,
     selectedMonths,
     includeCategories,
     excludeCategories,
@@ -362,6 +367,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 className="rounded border-[#32424a]"
               />
               <span>Post-2020 Only</span>
+            </label>
+
+            <label className="flex items-center gap-1.5 cursor-pointer text-[#485b69] dark:text-[#b0bec5] hover:text-[#121a21] dark:hover:text-white">
+              <input
+                type="checkbox"
+                checked={excludeExceptional}
+                onChange={(e) => setExcludeExceptional(e.target.checked)}
+                className="rounded border-[#32424a] text-amber-500 focus:ring-0"
+              />
+              <span className="flex items-center gap-1">
+                <Zap className="w-3 h-3 text-amber-500" />
+                <span>Exclude One-Offs</span>
+              </span>
             </label>
 
             <button
@@ -758,6 +776,39 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
         </div>
       </div>
+
+        {/* Excluded One-Off Spend Callout Banner */}
+        {excludeExceptional && data?.exceptional_summary && data.exceptional_summary.length > 0 && (
+          <div className="mt-3 p-2.5 rounded-lg bg-amber-950/30 border border-amber-800/50 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200">
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded bg-amber-500/20 text-amber-400">
+                <Zap className="w-3.5 h-3.5" />
+              </span>
+              <span>
+                <strong className="text-amber-300">Excluded One-Off Spend:</strong>{' '}
+                {data.exceptional_summary.map((item, idx) => (
+                  <span key={item.category}>
+                    {idx > 0 && ', '}
+                    <strong className="text-white">{item.category}</strong>{' '}
+                    (£{item.total.toFixed(2)} across {item.count} {item.count === 1 ? 'transaction' : 'transactions'})
+                  </span>
+                ))}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {data.exceptional_summary.map((item) => (
+                <button
+                  key={item.category}
+                  type="button"
+                  onClick={() => loadDrilldown(item.category)}
+                  className="px-2.5 py-1 rounded bg-amber-900/60 hover:bg-amber-800/80 text-amber-100 font-semibold text-[11px] border border-amber-700/60 transition-colors"
+                >
+                  Inspect {item.category}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Drill-down Drawer / Detail Panel */}
         {inspectCategory && (

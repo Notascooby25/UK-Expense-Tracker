@@ -67,6 +67,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     settings.committed_categories || []
   );
 
+  // Exceptional / One-off categories state
+  const [exceptionalCategories, setExceptionalCategories] = useState<string[]>(
+    settings.exceptional_categories || []
+  );
+
   // Custom categories & banks state
   const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [customBankInput, setCustomBankInput] = useState('');
@@ -189,6 +194,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     await persistSettings({ committed_categories: next });
   };
 
+  // Exceptional / One-off category toggle
+  const handleToggleExceptionalCategory = async (cat: string) => {
+    const next = exceptionalCategories.includes(cat)
+      ? exceptionalCategories.filter((c) => c !== cat)
+      : [...exceptionalCategories, cat];
+
+    setExceptionalCategories(next);
+    await persistSettings({ exceptional_categories: next });
+  };
+
   // Custom categories & banks
   const handleAddCustomCategory = async () => {
     const trimmed = customCategoryInput.trim();
@@ -284,7 +299,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           }`}
         >
           <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Committed Spend Criteria</span>
+          <span>Committed & Exceptional Spend</span>
         </button>
 
         <button
@@ -586,12 +601,45 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     onClick={() => handleToggleCommittedCategory(cat)}
                     className={`flex items-center justify-between p-2.5 rounded-lg border text-xs text-left transition-colors ${
                       isCommitted
-                        ? 'bg-cyan-950/40 border-cyan-700/60 text-cyan-200'
+                        ? 'bg-cyan-950/40 border-cyan-700/60 text-cyan-200 font-semibold'
                         : 'bg-[#263238] border-slate-700 text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     <span className="font-medium truncate">{cat}</span>
                     {isCommitted && <Check className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Exceptional / One-Off Categories */}
+          <div className="bg-[#1b262c] border border-amber-800/40 rounded-lg p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-amber-200 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span>Exceptional / One-Off Spend Categories</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Tag categories that represent rare, large project investments (e.g. <em>DIY Kitchen Renovation</em>, <em>Wedding</em>, <em>Car Purchase</em>). When excluded on the Dashboard, these large lump sums won't distort your normal day-to-day monthly run rates, and will instead appear in their own dedicated callout banner.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 pt-2">
+              {masterCategories.map((cat) => {
+                const isExceptional = exceptionalCategories.includes(cat);
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => handleToggleExceptionalCategory(cat)}
+                    className={`flex items-center justify-between p-2.5 rounded-lg border text-xs text-left transition-colors ${
+                      isExceptional
+                        ? 'bg-amber-950/50 border-amber-700/70 text-amber-200 font-semibold shadow-sm'
+                        : 'bg-[#263238] border-slate-700 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="font-medium truncate">{cat}</span>
+                    {isExceptional && <Check className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
                   </button>
                 );
               })}

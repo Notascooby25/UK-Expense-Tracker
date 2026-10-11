@@ -71,6 +71,7 @@ export const api = {
       hide_internal: boolean;
       net_spend_mode: boolean;
       ignore_legacy: boolean;
+      exclude_exceptional?: boolean;
       months: string[];
       include_categories: string[];
       exclude_categories: string[];
@@ -84,6 +85,7 @@ export const api = {
       hide_internal: String(params.hide_internal),
       net_spend_mode: String(params.net_spend_mode),
       ignore_legacy: String(params.ignore_legacy),
+      exclude_exceptional: String(params.exclude_exceptional ?? true),
       months: params.months.join(','),
       include_categories: params.include_categories.join(','),
       exclude_categories: params.exclude_categories.join(','),
@@ -101,6 +103,7 @@ export const api = {
       hide_internal: boolean;
       net_spend_mode: boolean;
       ignore_legacy: boolean;
+      exclude_exceptional?: boolean;
       months: string[];
       include_categories: string[];
       exclude_categories: string[];
@@ -115,6 +118,7 @@ export const api = {
       hide_internal: String(params.hide_internal),
       net_spend_mode: String(params.net_spend_mode),
       ignore_legacy: String(params.ignore_legacy),
+      exclude_exceptional: String(params.exclude_exceptional ?? true),
       months: params.months.join(','),
       include_categories: params.include_categories.join(','),
       exclude_categories: params.exclude_categories.join(','),

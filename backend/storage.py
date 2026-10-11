@@ -95,6 +95,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "custom_categories": [],
     "custom_banks": [],
     "committed_categories": [],
+    "exceptional_categories": [],
     "committed_presets": {},
     "auto_rules": [],
     "monzo_sheet_url": "",
@@ -228,6 +229,7 @@ def with_default_settings(settings: dict[str, Any] | None, scope: str) -> dict[s
         "custom_categories",
         "custom_banks",
         "committed_categories",
+        "exceptional_categories",
         "ignore_suggestions",
         "ignore_recurring",
     ):

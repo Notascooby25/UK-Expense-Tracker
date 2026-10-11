@@ -58,6 +58,7 @@ def prepare_filtered_dashboard_df(
             pd.DataFrame(),
             1,
             {"financial_years": ["All"], "calendar_years": ["All"], "banks": ["All Banks"]},
+            [],
         )
 
     df_v = df.copy()
@@ -133,9 +134,24 @@ def prepare_filtered_dashboard_df(
     if incl and not df_v.empty:
         df_v = df_v[df_v["Category"].isin(incl)]
 
-    excl = filters.get("exclude_categories") or []
-    if excl and not df_v.empty:
-        df_v = df_v[~df_v["Category"].isin(excl)]
+    exceptional_summary = []
+    exceptional_cats = set(settings.get("exceptional_categories", []))
+    if exceptional_cats and not df_v.empty:
+        exc_mask = df_v["Category"].isin(exceptional_cats)
+        if exc_mask.any():
+            for exc_cat, grp in df_v[exc_mask].groupby("Category"):
+                exc_exp = float(grp[grp["Transaction_Type"] == "Expense"]["Amount"].sum())
+                exc_inc = float(grp[grp["Transaction_Type"] == "Income"]["Amount"].sum())
+                exc_net = round(exc_exp - exc_inc, 2)
+                exceptional_summary.append(
+                    {
+                        "category": str(exc_cat),
+                        "total": exc_net if exc_net > 0 else round(exc_exp, 2),
+                        "count": int(len(grp)),
+                    }
+                )
+            if bool(filters.get("exclude_exceptional", True)):
+                df_v = df_v[~exc_mask]
 
     if time_mode == "Rolling Period":
         months_in_period = int(
@@ -157,6 +173,7 @@ def prepare_filtered_dashboard_df(
             "banks": available_banks,
             "rolling_periods": list(ROLLING_OPTIONS.keys()),
         },
+        exceptional_summary,
     )
 
 
@@ -164,11 +181,14 @@ def build_dashboard_data(
     df: pd.DataFrame, settings: dict[str, Any], filters: dict[str, Any]
 ) -> dict[str, Any]:
     """Compute complete Dashboard payload including KPIs, breakdowns, deltas, and charts."""
-    df_v, months_in_period, filter_options = prepare_filtered_dashboard_df(df, settings, filters)
+    df_v, months_in_period, filter_options, exceptional_summary = prepare_filtered_dashboard_df(
+        df, settings, filters
+    )
 
     if df_v.empty:
         return {
             "filter_options": filter_options,
+            "exceptional_summary": exceptional_summary,
             "metrics": {
                 "total_income": 0.0,
                 "committed_expenses": 0.0,
@@ -339,6 +359,7 @@ def build_dashboard_data(
 
     return {
         "filter_options": filter_options,
+        "exceptional_summary": exceptional_summary,
         "metrics": {
             "total_income": round(inc, 2),
             "committed_expenses": exp_com,
@@ -403,9 +424,10 @@ def build_category_drilldown(
     drill_filters = dict(filters)
     if target in INTERNAL_CATEGORIES:
         drill_filters["hide_internal"] = False
+    drill_filters["exclude_exceptional"] = False
     drill_filters["net_spend_mode"] = False
 
-    df_v, months_in_period, _ = prepare_filtered_dashboard_df(df, settings, drill_filters)
+    df_v, months_in_period, _, _ = prepare_filtered_dashboard_df(df, settings, drill_filters)
     if df_v.empty or not target:
         return {
             "category": target,

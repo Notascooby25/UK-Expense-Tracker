@@ -14,6 +14,7 @@ export interface AppSettings {
   custom_categories: string[];
   custom_banks: string[];
   committed_categories: string[];
+  exceptional_categories?: string[];
   committed_presets: Record<string, string[]>;
   auto_rules: AutoRule[];
   monzo_sheet_url: string;
@@ -76,6 +77,11 @@ export interface DashboardPayload {
     banks: string[];
     rolling_periods: string[];
   };
+  exceptional_summary?: Array<{
+    category: string;
+    total: number;
+    count: number;
+  }>;
   metrics: {
     total_income: number;
     committed_expenses: number;

@@ -223,6 +223,41 @@ def test_dashboard_and_category_drilldown(api_env):
     dash_tm = r_dash_tm.json()
     assert "metrics" in dash_tm
 
+    # Exceptional / One-off category exclusion test
+    # Save Grocerys as an exceptional category
+    save_settings(
+        "Personal",
+        {
+            "committed_categories": ["Bills"],
+            "exceptional_categories": ["Grocerys"],
+        },
+    )
+    # With exclude_exceptional=true (default)
+    r_dash_exc = client.get("/api/dashboard?scope=Personal&exclude_exceptional=true")
+    assert r_dash_exc.status_code == 200
+    dash_exc = r_dash_exc.json()
+    assert "exceptional_summary" in dash_exc
+    assert len(dash_exc["exceptional_summary"]) == 1
+    assert dash_exc["exceptional_summary"][0]["category"] == "Grocerys"
+    assert dash_exc["exceptional_summary"][0]["count"] == 1
+    # Variable expenses (was 90.99 with Tesco £80 + Netflix £10.99) now drops by 10.99 to 80.00
+    assert dash_exc["metrics"]["variable_expenses"] == 80.00
+
+    # With exclude_exceptional=false
+    r_dash_inc = client.get("/api/dashboard?scope=Personal&exclude_exceptional=false")
+    assert r_dash_inc.status_code == 200
+    dash_inc = r_dash_inc.json()
+    assert dash_inc["metrics"]["variable_expenses"] == 90.99
+
+    # Drilldown for exceptional category still returns transactions
+    r_drill_exc = client.get(
+        "/api/dashboard/drilldown?scope=Personal&category=Grocerys&exclude_exceptional=true"
+    )
+    assert r_drill_exc.status_code == 200
+    drill_exc = r_drill_exc.json()
+    assert drill_exc["category"] == "Grocerys"
+    assert len(drill_exc["transactions"]) == 1
+
 
 def test_transactions_filter_inline_edit_bulk_and_export(api_env):
     """Verify filtered inline edits preserve unfiltered rows, bulk actions save, and CSV exports."""
