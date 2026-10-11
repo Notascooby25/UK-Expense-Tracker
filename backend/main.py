@@ -146,6 +146,12 @@ class WealthBalanceSaveRequest(BaseModel):
     balances: dict[str, float]
 
 
+class WealthAccountManageRequest(BaseModel):
+    action: str  # "delete" or "rename"
+    account: str
+    new_name: str | None = None
+
+
 class TestRuleRequest(BaseModel):
     name: str = ""
     notes: str = ""
@@ -804,7 +810,66 @@ def save_wealth_balances(
         for k, v in payload.balances.items()
         if clean_string(k) and v is not None and float(v) > 0
     }
-    assets_data[month_str] = cleaned_balances
+    if cleaned_balances:
+        assets_data[month_str] = cleaned_balances
+    else:
+        assets_data.pop(month_str, None)
+    save_assets(norm_scope, assets_data)
+    df = load_transactions(norm_scope)
+    return {"saved": True, "wealth": build_wealth_data(df, assets_data)}
+
+
+@app.delete("/api/wealth/balances/{month}")
+def delete_wealth_month(
+    month: str,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    month_str = clean_string(month)
+    if not month_str:
+        raise HTTPException(status_code=400, detail="Month (YYYY-MM) is required.")
+    assets_data = load_assets(norm_scope)
+    assets_data.pop(month_str, None)
+    save_assets(norm_scope, assets_data)
+    df = load_transactions(norm_scope)
+    return {"saved": True, "wealth": build_wealth_data(df, assets_data)}
+
+
+@app.post("/api/wealth/accounts")
+def manage_wealth_account(
+    payload: WealthAccountManageRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    target_account = clean_string(payload.account)
+    if not target_account:
+        raise HTTPException(status_code=400, detail="Account name is required.")
+    assets_data = load_assets(norm_scope)
+
+    if payload.action == "delete":
+        empty_months: list[str] = []
+        for m_key, m_map in assets_data.items():
+            if isinstance(m_map, dict):
+                m_map.pop(target_account, None)
+                if not m_map:
+                    empty_months.append(m_key)
+        for m_key in empty_months:
+            assets_data.pop(m_key, None)
+
+    elif payload.action == "rename":
+        new_name = clean_string(payload.new_name or "")
+        if not new_name:
+            raise HTTPException(status_code=400, detail="New account name is required.")
+        if new_name != target_account:
+            for _, m_map in assets_data.items():
+                if isinstance(m_map, dict) and target_account in m_map:
+                    val = float(m_map.pop(target_account))
+                    m_map[new_name] = round(float(m_map.get(new_name, 0.0)) + val, 2)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported account action: {payload.action}")
+
     save_assets(norm_scope, assets_data)
     df = load_transactions(norm_scope)
     return {"saved": True, "wealth": build_wealth_data(df, assets_data)}

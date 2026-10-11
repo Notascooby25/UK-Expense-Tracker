@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.6.2"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.6.2",
+        "date": "11 Oct 2026",
+        "title": "Wealth History Editor & Account Management Modal",
+        "changes": [
+            "Added an 'Edit History' button and scrollable popup modal on the Wealth & Net Worth page to edit or delete any recorded monthly balance snapshot.",
+            "Added account management tools to rename mistyped accounts or delete unwanted accounts across all recorded months.",
+            "Automatically clean up empty month entries when all balances for a month are cleared.",
+        ],
+    },
     {
         "version": "0.6.1",
         "date": "11 Oct 2026",

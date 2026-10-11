@@ -432,16 +432,16 @@ def test_transactions_filter_by_date_range_and_months(api_env):
 
 
 def test_version_and_changelog_exposed_in_auth_and_bootstrap(api_env):
-    """Verify /api/auth/status and /api/bootstrap expose version 0.6.1 and backfilled changelog."""
+    """Verify /api/auth/status and /api/bootstrap expose version 0.6.2 and backfilled changelog."""
     client = TestClient(app)
 
     r_status = client.get("/api/auth/status")
     assert r_status.status_code == 200
     status_data = r_status.json()
-    assert status_data["version"] == "0.6.1"
+    assert status_data["version"] == "0.6.2"
     assert "changelog" in status_data
-    assert len(status_data["changelog"]) == 7
-    assert status_data["changelog"][0]["version"] == "0.6.1"
+    assert len(status_data["changelog"]) == 8
+    assert status_data["changelog"][0]["version"] == "0.6.2"
     assert status_data["changelog"][-1]["version"] == "0.1.0"
 
     client.post(
@@ -451,5 +451,59 @@ def test_version_and_changelog_exposed_in_auth_and_bootstrap(api_env):
     r_boot = client.get("/api/bootstrap?scope=Personal")
     assert r_boot.status_code == 200
     boot_data = r_boot.json()
-    assert boot_data["version"] == "0.6.1"
+    assert boot_data["version"] == "0.6.2"
     assert boot_data["changelog"] == status_data["changelog"]
+
+
+def test_wealth_delete_month_and_manage_accounts(api_env):
+    """Verify deleting a month snapshot and renaming/deleting an account across wealth history."""
+    client = TestClient(app)
+    client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": DUMMY_CRED, "remember_me": False},
+    )
+
+    client.post(
+        "/api/wealth/balances?scope=Personal",
+        json={"month": "2026-01", "balances": {"Cash ISA": 3000.0, "Crytpo": 500.0}},
+    )
+    client.post(
+        "/api/wealth/balances?scope=Personal",
+        json={"month": "2026-02", "balances": {"Cash ISA": 4000.0, "Crytpo": 600.0}},
+    )
+
+    # Rename mistyped account "Crytpo" -> "Crypto" across all months
+    r_ren = client.post(
+        "/api/wealth/accounts?scope=Personal",
+        json={"action": "rename", "account": "Crytpo", "new_name": "Crypto"},
+    )
+    assert r_ren.status_code == 200
+    w_ren = r_ren.json()["wealth"]
+    assert "Crypto" in w_ren["known_assets"]
+    assert "Crytpo" not in w_ren["known_assets"]
+    assert w_ren["assets_by_month"]["2026-02"]["Crypto"] == 600.0
+
+    # Delete account "Crypto" across all months
+    r_del_acc = client.post(
+        "/api/wealth/accounts?scope=Personal",
+        json={"action": "delete", "account": "Crypto"},
+    )
+    assert r_del_acc.status_code == 200
+    w_del_acc = r_del_acc.json()["wealth"]
+    assert "Crypto" not in w_del_acc["known_assets"]
+    assert w_del_acc["latest_net_worth"] == 4000.0
+
+    # Delete 2026-01 month snapshot completely
+    r_del_month = client.delete("/api/wealth/balances/2026-01?scope=Personal")
+    assert r_del_month.status_code == 200
+    w_del_month = r_del_month.json()["wealth"]
+    assert "2026-01" not in w_del_month["assets_by_month"]
+    assert "2026-02" in w_del_month["assets_by_month"]
+
+    # Saving empty balances for 2026-02 removes the month entry instead of leaving {}
+    r_clear = client.post(
+        "/api/wealth/balances?scope=Personal",
+        json={"month": "2026-02", "balances": {}},
+    )
+    assert r_clear.status_code == 200
+    assert "2026-02" not in r_clear.json()["wealth"]["assets_by_month"]

@@ -348,6 +348,28 @@ export const api = {
     );
   },
 
+  deleteWealthMonth(scope: AccountScope, month: string) {
+    return requestJson<{ saved: boolean; wealth: WealthPayload }>(
+      `/api/wealth/balances/${encodeURIComponent(month)}?scope=${encodeURIComponent(scope)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  },
+
+  manageWealthAccount(
+    scope: AccountScope,
+    payload: { action: 'delete' | 'rename'; account: string; new_name?: string }
+  ) {
+    return requestJson<{ saved: boolean; wealth: WealthPayload }>(
+      `/api/wealth/accounts?scope=${encodeURIComponent(scope)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  },
+
   updateSettings(scope: AccountScope, patch: Partial<AppSettings>) {
     return requestJson<{
       saved: boolean;

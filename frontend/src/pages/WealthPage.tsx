@@ -10,6 +10,9 @@ import {
   RefreshCw,
   ArrowRightLeft,
   Calendar,
+  Pencil,
+  Trash2,
+  X,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -62,12 +65,65 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
   const [assetBalances, setAssetBalances] = useState<Record<string, number | ''>>({});
   const [newAssetName, setNewAssetName] = useState('');
 
+  // Edit History & Manage Accounts Popup Modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [modalTab, setModalTab] = useState<'months' | 'accounts'>('months');
+  const [modalMonthEdits, setModalMonthEdits] = useState<
+    Record<string, Record<string, number | ''>>
+  >({});
+  const [renameDrafts, setRenameDrafts] = useState<Record<string, string>>({});
+  const [modalSaving, setModalSaving] = useState(false);
+
+  const syncModalStateFromWealth = useCallback((wealth: WealthPayload) => {
+    const nextEdits: Record<string, Record<string, number | ''>> = {};
+    const allKnown = wealth.known_assets || [];
+    Object.entries(wealth.assets_by_month || {}).forEach(([m, balances]) => {
+      const row: Record<string, number | ''> = {};
+      allKnown.forEach((a) => {
+        row[a] = balances[a] !== undefined ? balances[a] : '';
+      });
+      Object.entries(balances).forEach(([a, val]) => {
+        row[a] = val;
+      });
+      nextEdits[m] = row;
+    });
+    setModalMonthEdits(nextEdits);
+
+    const nextRenames: Record<string, string> = {};
+    allKnown.forEach((a) => {
+      nextRenames[a] = a;
+    });
+    setRenameDrafts(nextRenames);
+  }, []);
+
+  const applyUpdatedWealth = useCallback(
+    (wealth: WealthPayload, message: string) => {
+      setData(wealth);
+      syncModalStateFromWealth(wealth);
+      if (wealth.assets_by_month && wealth.assets_by_month[selectedMonth]) {
+        setAssetBalances(wealth.assets_by_month[selectedMonth]);
+      } else if (wealth.latest_balances && Object.keys(wealth.latest_balances).length > 0) {
+        setAssetBalances(wealth.latest_balances);
+      } else {
+        const blank: Record<string, number | ''> = {};
+        (wealth.known_assets || []).forEach((a) => {
+          blank[a] = '';
+        });
+        setAssetBalances(blank);
+      }
+      setStatusMsg(message);
+      setTimeout(() => setStatusMsg((cur) => (cur === message ? null : cur)), 3000);
+    },
+    [selectedMonth, syncModalStateFromWealth]
+  );
+
   const loadWealth = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await api.getWealth(scope, ignoreLegacy, timeframe);
       setData(res);
+      syncModalStateFromWealth(res);
 
       // Pre-fill balances for the selected month if available
       if (res.assets_by_month && res.assets_by_month[selectedMonth]) {
@@ -81,11 +137,22 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     } finally {
       setLoading(false);
     }
-  }, [scope, ignoreLegacy, timeframe, selectedMonth]);
+  }, [scope, ignoreLegacy, timeframe, selectedMonth, syncModalStateFromWealth]);
 
   useEffect(() => {
     loadWealth();
   }, [loadWealth]);
+
+  useEffect(() => {
+    if (!showEditModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowEditModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showEditModal]);
 
   // Update asset balances when month changes
   const handleMonthChange = (month: string) => {
@@ -110,6 +177,18 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     }));
   };
 
+  const handleClearOrRemoveAssetRow = (asset: string) => {
+    setAssetBalances((prev) => {
+      const next = { ...prev };
+      if (data?.known_assets?.includes(asset)) {
+        next[asset] = '';
+      } else {
+        delete next[asset];
+      }
+      return next;
+    });
+  };
+
   const handleAddNewAsset = () => {
     const trimmed = newAssetName.trim();
     if (!trimmed) return;
@@ -126,26 +205,111 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
       // Filter out non-numeric values
       const numericPayload: Record<string, number> = {};
       Object.entries(assetBalances).forEach(([asset, val]) => {
-        if (typeof val === 'number') {
+        if (typeof val === 'number' && val > 0) {
           numericPayload[asset] = val;
         } else if (typeof val === 'string' && val.trim() !== '') {
           const num = parseFloat(val);
-          if (!isNaN(num)) numericPayload[asset] = num;
+          if (!isNaN(num) && num > 0) numericPayload[asset] = num;
         }
       });
 
       const res = await api.saveWealthBalances(scope, selectedMonth, numericPayload);
-      setData(res.wealth);
-      setStatusMsg(`Balances for ${selectedMonth} saved!`);
-      setTimeout(() => setStatusMsg(null), 3000);
+      applyUpdatedWealth(res.wealth, `Balances for ${selectedMonth} saved!`);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to save asset balances');
+    }
+  };
+
+  const handleModalBalanceChange = (month: string, asset: string, valStr: string) => {
+    const val = valStr === '' ? '' : parseFloat(valStr);
+    setModalMonthEdits((prev) => ({
+      ...prev,
+      [month]: {
+        ...(prev[month] || {}),
+        [asset]: isNaN(val as number) ? '' : val,
+      },
+    }));
+  };
+
+  const handleSaveModalMonth = async (month: string) => {
+    setModalSaving(true);
+    try {
+      const monthRow = modalMonthEdits[month] || {};
+      const numericPayload: Record<string, number> = {};
+      Object.entries(monthRow).forEach(([asset, val]) => {
+        if (typeof val === 'number' && val > 0) {
+          numericPayload[asset] = val;
+        } else if (typeof val === 'string' && val.trim() !== '') {
+          const num = parseFloat(val);
+          if (!isNaN(num) && num > 0) numericPayload[asset] = num;
+        }
+      });
+      const res = await api.saveWealthBalances(scope, month, numericPayload);
+      applyUpdatedWealth(res.wealth, `Updated ${month} balances`);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : `Failed to update ${month}`);
+    } finally {
+      setModalSaving(false);
+    }
+  };
+
+  const handleDeleteMonth = async (month: string) => {
+    setModalSaving(true);
+    try {
+      const res = await api.deleteWealthMonth(scope, month);
+      applyUpdatedWealth(res.wealth, `Deleted ${month} snapshot`);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : `Failed to delete ${month}`);
+    } finally {
+      setModalSaving(false);
+    }
+  };
+
+  const handleDeleteAccountEverywhere = async (account: string) => {
+    setModalSaving(true);
+    try {
+      setAssetBalances((prev) => {
+        const next = { ...prev };
+        delete next[account];
+        return next;
+      });
+      const res = await api.manageWealthAccount(scope, {
+        action: 'delete',
+        account,
+      });
+      applyUpdatedWealth(res.wealth, `Deleted account "${account}"`);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : `Failed to delete account "${account}"`);
+    } finally {
+      setModalSaving(false);
+    }
+  };
+
+  const handleRenameAccountEverywhere = async (account: string) => {
+    const newName = (renameDrafts[account] || '').trim();
+    if (!newName || newName === account) return;
+    setModalSaving(true);
+    try {
+      const res = await api.manageWealthAccount(scope, {
+        action: 'rename',
+        account,
+        new_name: newName,
+      });
+      applyUpdatedWealth(res.wealth, `Renamed "${account}" to "${newName}"`);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : `Failed to rename account "${account}"`);
+    } finally {
+      setModalSaving(false);
     }
   };
 
   const currentAssets = Array.from(
     new Set([...(data?.known_assets || []), ...Object.keys(assetBalances)])
   ).sort();
+
+  const recordedMonthsDesc = Object.keys(data?.assets_by_month || {}).sort((a, b) =>
+    b.localeCompare(a)
+  );
 
   return (
     <div className="space-y-6 pb-20">
@@ -259,14 +423,28 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column (5 cols): Monthly Asset Balance Logger Card */}
         <div className="lg:col-span-5 bg-[#1b262c] border border-slate-700/50 rounded-lg p-5 space-y-5">
-          <div className="border-b border-slate-700/50 pb-3">
-            <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-emerald-400" />
-              <span>Monthly Balance Logger</span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Record account balances for each month to build your net worth progression curve.
-            </p>
+          <div className="border-b border-slate-700/50 pb-3 flex items-start justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-emerald-400" />
+                <span>Monthly Balance Logger</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Record account balances for each month to build your net worth progression curve.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (data) syncModalStateFromWealth(data);
+                setShowEditModal(true);
+              }}
+              className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-[#263238] hover:bg-slate-700 text-cyan-300 border border-slate-700 transition-colors"
+              title="Open popup to scroll, edit, or delete saved months and accounts"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              <span>Edit History</span>
+            </button>
           </div>
 
           {/* Month Selector */}
@@ -294,7 +472,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
               ) : (
                 currentAssets.map((asset) => (
                   <div key={asset} className="flex items-center gap-2">
-                    <span className="text-xs text-slate-300 font-medium w-40 truncate" title={asset}>
+                    <span className="text-xs text-slate-300 font-medium w-36 truncate" title={asset}>
                       {asset}
                     </span>
                     <div className="relative flex-1">
@@ -310,6 +488,15 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                         className="w-full pl-6 pr-2.5 py-1.5 text-xs bg-[#263238] border border-slate-700 rounded-md text-slate-100 font-mono focus:outline-none focus:border-cyan-500"
                       />
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => handleClearOrRemoveAssetRow(asset)}
+                      className="p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                      title={`Clear ${asset} for ${selectedMonth}`}
+                      aria-label={`Clear ${asset} for ${selectedMonth}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 ))
               )}
@@ -513,6 +700,243 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
           </table>
         </div>
       </div>
+
+      {/* Edit Wealth History & Manage Accounts Popup Modal */}
+      {showEditModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs"
+          onClick={() => setShowEditModal(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="wealth-editor-modal-title"
+        >
+          <div
+            className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl bg-[#1b262c] border border-slate-700 text-slate-100 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-700/70 bg-[#222f36] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 id="wealth-editor-modal-title" className="text-base font-bold leading-tight">
+                    Edit Wealth Balances & Accounts
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Scroll through saved monthly snapshots or rename/delete tracked accounts ({scope})
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60 transition-colors"
+                aria-label="Close wealth editor"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Tab Switcher */}
+            <div className="px-5 pt-3 border-b border-slate-800 bg-[#1b262c] flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setModalTab('months')}
+                className={`px-3 py-2 text-xs font-semibold border-b-2 transition-colors ${
+                  modalTab === 'months'
+                    ? 'border-emerald-400 text-emerald-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Recorded Months ({recordedMonthsDesc.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalTab('accounts')}
+                className={`px-3 py-2 text-xs font-semibold border-b-2 transition-colors ${
+                  modalTab === 'accounts'
+                    ? 'border-cyan-400 text-cyan-300'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Manage Accounts ({currentAssets.length})
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              {modalTab === 'months' ? (
+                recordedMonthsDesc.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-400">
+                    No monthly snapshots saved yet. Use the Monthly Balance Logger to record your first month.
+                  </div>
+                ) : (
+                  recordedMonthsDesc.map((month) => {
+                    const monthRow = modalMonthEdits[month] || {};
+                    const monthAssets = Array.from(
+                      new Set([...currentAssets, ...Object.keys(monthRow)])
+                    ).sort();
+                    const monthTotal = Object.values(monthRow).reduce<number>((acc, v) => {
+                      const num = typeof v === 'number' ? v : parseFloat(String(v));
+                      return acc + (!isNaN(num) && num > 0 ? num : 0);
+                    }, 0);
+
+                    return (
+                      <div
+                        key={month}
+                        className="p-4 rounded-lg bg-[#222f36] border border-slate-700/70 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-700/60">
+                          <div className="flex items-center gap-2.5">
+                            <span className="px-2.5 py-0.5 rounded bg-[#1b262c] border border-slate-700 font-mono text-xs font-bold text-emerald-400">
+                              {month}
+                            </span>
+                            <span className="text-xs text-slate-300 font-mono">
+                              Total:{' '}
+                              <strong className="text-white">
+                                £{monthTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                              </strong>
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={modalSaving}
+                              onClick={() => handleSaveModalMonth(month)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-medium transition-colors"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              <span>Save {month}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={modalSaving}
+                              onClick={() => handleDeleteMonth(month)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 disabled:opacity-50 text-red-200 text-xs font-medium transition-colors"
+                              title={`Delete entire ${month} snapshot`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete Month</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {monthAssets.map((asset) => (
+                            <div
+                              key={`${month}-${asset}`}
+                              className="flex items-center gap-2 bg-[#1b262c] border border-slate-700/60 rounded-md px-2.5 py-1.5"
+                            >
+                              <span
+                                className="text-xs text-slate-300 font-medium w-28 truncate"
+                                title={asset}
+                              >
+                                {asset}
+                              </span>
+                              <div className="relative flex-1">
+                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">
+                                  £
+                                </span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="0.00"
+                                  value={monthRow[asset] ?? ''}
+                                  onChange={(e) =>
+                                    handleModalBalanceChange(month, asset, e.target.value)
+                                  }
+                                  className="w-full pl-5 pr-2 py-1 text-xs bg-[#263238] border border-slate-700 rounded text-slate-100 font-mono focus:outline-none focus:border-cyan-500"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleModalBalanceChange(month, asset, '')}
+                                className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                                title={`Clear ${asset} in ${month}`}
+                                aria-label={`Clear ${asset} in ${month}`}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
+                )
+              ) : currentAssets.length === 0 ? (
+                <div className="py-12 text-center text-xs text-slate-400">
+                  No accounts tracked yet.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <p className="text-xs text-slate-400">
+                    Rename an account to fix a typo across all saved months, or delete an account to remove it from every recorded snapshot.
+                  </p>
+                  {currentAssets.map((account) => {
+                    const draftVal = renameDrafts[account] ?? account;
+                    const isChanged = draftVal.trim() !== '' && draftVal.trim() !== account;
+                    return (
+                      <div
+                        key={account}
+                        className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 p-3 rounded-lg bg-[#222f36] border border-slate-700/70"
+                      >
+                        <input
+                          type="text"
+                          value={draftVal}
+                          onChange={(e) =>
+                            setRenameDrafts((prev) => ({
+                              ...prev,
+                              [account]: e.target.value,
+                            }))
+                          }
+                          className="flex-1 min-w-[180px] px-2.5 py-1.5 text-xs bg-[#1b262c] border border-slate-700 rounded text-slate-100 focus:outline-none focus:border-cyan-500"
+                          aria-label={`Account name for ${account}`}
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={!isChanged || modalSaving}
+                            onClick={() => handleRenameAccountEverywhere(account)}
+                            className="px-2.5 py-1.5 rounded bg-cyan-700 hover:bg-cyan-600 disabled:opacity-40 text-white text-xs font-medium transition-colors"
+                          >
+                            Rename
+                          </button>
+                          <button
+                            type="button"
+                            disabled={modalSaving}
+                            onClick={() => handleDeleteAccountEverywhere(account)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 disabled:opacity-50 text-red-200 text-xs font-medium transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete Account</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 border-t border-slate-700/70 bg-[#222f36] flex items-center justify-between text-xs text-slate-400">
+              <span>Changes update your Net Worth chart immediately when saved</span>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
