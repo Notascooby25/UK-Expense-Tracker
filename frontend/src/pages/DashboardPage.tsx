@@ -30,12 +30,17 @@ import {
   Legend,
 } from 'recharts';
 import { api } from '../api';
-import { AccountScope, DashboardPayload, CategoryDrilldownPayload, NavPage } from '../types';
+import {
+  AccountScope,
+  DashboardPayload,
+  CategoryDrilldownPayload,
+  TransactionsFilterHandoff,
+} from '../types';
 
 interface DashboardPageProps {
   scope: AccountScope;
   masterCategories: string[];
-  onNavigateToTransactions: (prefilterCategory?: string) => void;
+  onNavigateToTransactions: (handoff?: TransactionsFilterHandoff) => void;
 }
 
 const MONTH_OPTIONS = [
@@ -85,6 +90,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const [drilldown, setDrilldown] = useState<CategoryDrilldownPayload | null>(null);
   const [drilldownError, setDrilldownError] = useState<string | null>(null);
+  const [drilldownSaveStatus, setDrilldownSaveStatus] = useState<string | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   // Chart visibility toggles
@@ -228,6 +234,116 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     setExcludeCategories([]);
     setInspectCategory(null);
     setDrilldown(null);
+  };
+
+  const buildTransactionsHandoff = (categoryName: string): TransactionsFilterHandoff => {
+    const normalizedBank = bank && bank !== 'All Banks' ? bank : 'All';
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    if (timeMode === 'Financial Year') {
+      return {
+        category: categoryName,
+        bank: normalizedBank,
+        financial_year: selectedPeriod || 'All',
+        date_from: selectedPeriod === 'All' && ignoreLegacy ? '2021-01-01' : '',
+        date_to: '',
+        months: [],
+      };
+    }
+
+    if (timeMode === 'Calendar Year') {
+      const monthIndices = selectedMonths
+        .map((sm) => MONTH_OPTIONS.findIndex((m) => m.full === sm || m.short === sm))
+        .filter((idx) => idx >= 0);
+
+      if (selectedPeriod !== 'All' && /^\d{4}$/.test(selectedPeriod)) {
+        const yearNum = parseInt(selectedPeriod, 10);
+        if (monthIndices.length === 0) {
+          return {
+            category: categoryName,
+            bank: normalizedBank,
+            financial_year: 'All',
+            date_from: `${selectedPeriod}-01-01`,
+            date_to: `${selectedPeriod}-12-31`,
+            months: [],
+          };
+        }
+        const uniqueSorted = Array.from(new Set(monthIndices)).sort((a, b) => a - b);
+        const minMonth = uniqueSorted[0];
+        const maxMonth = uniqueSorted[uniqueSorted.length - 1];
+        const lastDay = new Date(yearNum, maxMonth + 1, 0).getDate();
+        const isContiguous = maxMonth - minMonth + 1 === uniqueSorted.length;
+
+        return {
+          category: categoryName,
+          bank: normalizedBank,
+          financial_year: 'All',
+          date_from: `${yearNum}-${pad(minMonth + 1)}-01`,
+          date_to: `${yearNum}-${pad(maxMonth + 1)}-${pad(lastDay)}`,
+          months: isContiguous ? [] : selectedMonths,
+        };
+      }
+
+      return {
+        category: categoryName,
+        bank: normalizedBank,
+        financial_year: 'All',
+        date_from: ignoreLegacy ? '2021-01-01' : '',
+        date_to: '',
+        months: selectedMonths.length > 0 ? selectedMonths : [],
+      };
+    }
+
+    // Rolling Period mode
+    const now = new Date();
+    let dateFrom = '';
+    if (selectedPeriod === 'This Month') {
+      dateFrom = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+    } else {
+      const rollingMap: Record<string, number> = {
+        'Last 3 Months': 3,
+        'Last 6 Months': 6,
+        'Last 12 Months': 12,
+        'Last 18 Months': 18,
+        'Last 2 Years': 24,
+      };
+      const monthsBack = rollingMap[selectedPeriod] ?? 3;
+      const targetYear = now.getFullYear();
+      const targetMonth = now.getMonth() - monthsBack;
+      const maxDayInTarget = new Date(targetYear, targetMonth + 1, 0).getDate();
+      const cutoffDate = new Date(
+        targetYear,
+        targetMonth,
+        Math.min(now.getDate(), maxDayInTarget)
+      );
+      dateFrom = `${cutoffDate.getFullYear()}-${pad(cutoffDate.getMonth() + 1)}-${pad(cutoffDate.getDate())}`;
+    }
+
+    return {
+      category: categoryName,
+      bank: normalizedBank,
+      financial_year: 'All',
+      date_from: dateFrom,
+      date_to: '',
+      months: [],
+    };
+  };
+
+  const handleDrilldownCategoryChange = async (rowId: number, newCategory: string) => {
+    setDrilldownSaveStatus('Saving...');
+    setDrilldownError(null);
+    try {
+      await api.patchTransaction(scope, rowId, { Category: newCategory });
+      setDrilldownSaveStatus('Category updated');
+      setTimeout(() => {
+        setDrilldownSaveStatus((cur) => (cur === 'Category updated' ? null : cur));
+      }, 2500);
+      await fetchDashboard();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update category';
+      setDrilldownError(msg);
+      setDrilldownSaveStatus(null);
+    }
   };
 
 
@@ -828,9 +944,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
+                {drilldownSaveStatus && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 rounded-lg">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{drilldownSaveStatus}</span>
+                  </span>
+                )}
                 <button
                   type="button"
-                  onClick={() => onNavigateToTransactions(inspectCategory)}
+                  onClick={() => onNavigateToTransactions(buildTransactionsHandoff(inspectCategory))}
                   className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-[#e74c3c] hover:bg-[#d64232] text-white"
                 >
                   <span>Open in Transactions Editor</span>
@@ -908,6 +1030,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                         <th className="py-1.5 px-2.5">Date</th>
                         <th className="py-1.5 px-2.5">Name</th>
                         <th className="py-1.5 px-2.5 text-right">Amount</th>
+                        <th className="py-1.5 px-2.5">Category</th>
                         <th className="py-1.5 px-2.5">Notes</th>
                       </tr>
                     </thead>
@@ -932,6 +1055,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                           </td>
                           <td className="py-1 px-2.5 text-right tabular-nums">
                             £{tx.Amount.toFixed(2)}
+                          </td>
+                          <td className="py-1 px-2.5">
+                            <select
+                              aria-label={`Category for ${tx.Name}`}
+                              value={tx.Category}
+                              onChange={(e) =>
+                                handleDrilldownCategoryChange(tx.row_id, e.target.value)
+                              }
+                              className="bg-[#eef2f5] dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] hover:border-cyan-500/60 focus:border-cyan-500 rounded px-1.5 py-0.5 text-[11px] text-[#121a21] dark:text-[#f8fafc] outline-none cursor-pointer max-w-[135px]"
+                            >
+                              {!tx.Category && <option value="">Uncategorized</option>}
+                              {tx.Category && !masterCategories.includes(tx.Category) && (
+                                <option value={tx.Category}>{tx.Category}</option>
+                              )}
+                              {masterCategories.map((c) => (
+                                <option key={c} value={c}>
+                                  {c}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td className="py-1 px-2.5 text-[#485b69] dark:text-[#b0bec5] truncate max-w-[120px]">
                             {tx.Notes}

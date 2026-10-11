@@ -394,3 +394,38 @@ def test_intelligence_wealth_and_settings_endpoints(api_env):
     assert r_test_rule.status_code == 200
     assert r_test_rule.json()["matched"] is True
     assert r_test_rule.json()["rule"]["category"] == "Eating Out"
+
+
+def test_transactions_filter_by_date_range_and_months(api_env):
+    """Verify /api/transactions supports date_from, date_to, and months filters matching Dashboard."""
+    client = TestClient(app)
+    client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": DUMMY_CRED, "remember_me": False},
+    )
+
+    # Filter Bills in February 2026 via date_from / date_to
+    r_feb = client.get(
+        "/api/transactions?scope=Personal&category=Bills&date_from=2026-02-01&date_to=2026-02-28"
+    )
+    assert r_feb.status_code == 200
+    feb_data = r_feb.json()
+    assert feb_data["total"] == 1
+    assert feb_data["rows"][0]["Date"] == "2026-02-18"
+
+    # Filter Bills by explicit month name list (months=January) within full 2026 date range
+    r_jan = client.get(
+        "/api/transactions?scope=Personal&category=Bills&date_from=2026-01-01&date_to=2026-12-31&months=January"
+    )
+    assert r_jan.status_code == 200
+    jan_data = r_jan.json()
+    assert jan_data["total"] == 1
+    assert jan_data["rows"][0]["Date"] == "2026-01-18"
+
+    # Export CSV with months=January should only include the January row
+    r_exp_jan = client.get(
+        "/api/transactions/export?scope=Personal&category=Bills&date_from=2026-01-01&date_to=2026-12-31&months=January"
+    )
+    assert r_exp_jan.status_code == 200
+    assert "18/01/2026,Council Tax" in r_exp_jan.text
+    assert "18/02/2026,Council Tax" not in r_exp_jan.text

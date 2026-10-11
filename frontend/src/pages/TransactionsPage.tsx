@@ -15,7 +15,12 @@ import {
   Repeat,
 } from 'lucide-react';
 import { api } from '../api';
-import { AccountScope, FilterPreset, TransactionRow } from '../types';
+import {
+  AccountScope,
+  FilterPreset,
+  TransactionRow,
+  TransactionsFilterHandoff,
+} from '../types';
 
 interface TransactionsPageProps {
   scope: AccountScope;
@@ -24,8 +29,8 @@ interface TransactionsPageProps {
   financialYears: string[];
   savedFilters: Record<string, FilterPreset>;
   onSavedFiltersChange: (presets: Record<string, FilterPreset>) => void;
-  initialCategory?: string | null;
-  onClearInitialCategory?: () => void;
+  initialFilters?: TransactionsFilterHandoff | null;
+  onClearInitialFilters?: () => void;
 }
 
 export const TransactionsPage: React.FC<TransactionsPageProps> = ({
@@ -35,18 +40,21 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   financialYears,
   savedFilters,
   onSavedFiltersChange,
-  initialCategory,
-  onClearInitialCategory,
+  initialFilters,
+  onClearInitialFilters,
 }) => {
   // Filter states
   const [search, setSearch] = useState('');
   const [notes, setNotes] = useState('');
-  const [bank, setBank] = useState('All');
-  const [category, setCategory] = useState(initialCategory || 'All');
+  const [bank, setBank] = useState(
+    initialFilters?.bank && initialFilters.bank !== 'All Banks' ? initialFilters.bank : 'All'
+  );
+  const [category, setCategory] = useState(initialFilters?.category || 'All');
   const [transactionType, setTransactionType] = useState('Both');
-  const [financialYear, setFinancialYear] = useState('All');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [financialYear, setFinancialYear] = useState(initialFilters?.financial_year || 'All');
+  const [dateFrom, setDateFrom] = useState(initialFilters?.date_from || '');
+  const [dateTo, setDateTo] = useState(initialFilters?.date_to || '');
+  const [months, setMonths] = useState<string[]>(initialFilters?.months || []);
 
   // Pagination states
   const [pageSize, setPageSize] = useState(100);
@@ -74,14 +82,22 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [bulkCategory, setBulkCategory] = useState('');
   const [bulkType, setBulkType] = useState('');
 
-  // Synchronize initialCategory if passed from dashboard
+  // Synchronize initialFilters if passed from dashboard drill-down
   useEffect(() => {
-    if (initialCategory) {
-      setCategory(initialCategory);
+    if (initialFilters) {
+      setCategory(initialFilters.category || 'All');
+      setBank(
+        initialFilters.bank && initialFilters.bank !== 'All Banks' ? initialFilters.bank : 'All'
+      );
+      setFinancialYear(initialFilters.financial_year || 'All');
+      setDateFrom(initialFilters.date_from || '');
+      setDateTo(initialFilters.date_to || '');
+      setMonths(initialFilters.months || []);
       setCurrentPage(1);
-      if (onClearInitialCategory) onClearInitialCategory();
+      setSelectedIds(new Set());
+      if (onClearInitialFilters) onClearInitialFilters();
     }
-  }, [initialCategory, onClearInitialCategory]);
+  }, [initialFilters, onClearInitialFilters]);
 
   // Load transactions
   const loadTransactions = useCallback(async () => {
@@ -98,6 +114,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
         financial_year: financialYear,
         date_from: dateFrom,
         date_to: dateTo,
+        months,
         limit: pageSize,
         offset,
       });
@@ -121,6 +138,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     financialYear,
     dateFrom,
     dateTo,
+    months,
   ]);
 
   useEffect(() => {
@@ -143,6 +161,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     setFinancialYear('All');
     setDateFrom('');
     setDateTo('');
+    setMonths([]);
     setSelectedPresetName('');
     setCurrentPage(1);
     setSelectedIds(new Set());
@@ -162,6 +181,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     if (p.bank !== undefined) setBank(p.bank);
     if (p.date_from !== undefined) setDateFrom(p.date_from);
     if (p.date_to !== undefined) setDateTo(p.date_to);
+    setMonths([]);
     setCurrentPage(1);
     setSelectedIds(new Set());
   };
@@ -376,6 +396,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       financial_year: financialYear,
       date_from: dateFrom,
       date_to: dateTo,
+      months,
     });
   }, [
     scope,
@@ -387,6 +408,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     financialYear,
     dateFrom,
     dateTo,
+    months,
   ]);
 
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -538,6 +560,9 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               className="w-full px-2.5 py-1.5 text-xs bg-[#263238] border border-slate-700 rounded-md text-slate-200 focus:outline-none focus:border-cyan-500"
             >
               <option value="All">All Categories</option>
+              {category !== 'All' && !masterCategories.includes(category) && (
+                <option value={category}>{category}</option>
+              )}
               {masterCategories.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -584,20 +609,46 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               <input
                 type="date"
                 value={dateFrom}
-                onChange={(e) => handleFilterChange(setDateFrom, e.target.value)}
+                onChange={(e) => {
+                  setMonths([]);
+                  handleFilterChange(setDateFrom, e.target.value);
+                }}
                 className="w-full px-1.5 py-1.5 text-[11px] bg-[#263238] border border-slate-700 rounded-md text-slate-200 focus:outline-none focus:border-cyan-500"
                 title="Date From"
               />
               <input
                 type="date"
                 value={dateTo}
-                onChange={(e) => handleFilterChange(setDateTo, e.target.value)}
+                onChange={(e) => {
+                  setMonths([]);
+                  handleFilterChange(setDateTo, e.target.value);
+                }}
                 className="w-full px-1.5 py-1.5 text-[11px] bg-[#263238] border border-slate-700 rounded-md text-slate-200 focus:outline-none focus:border-cyan-500"
                 title="Date To"
               />
             </div>
           </div>
         </div>
+
+        {months.length > 0 && (
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/40 text-xs text-cyan-300">
+            <span>
+              Filtered to selected Dashboard months:{' '}
+              <strong className="font-semibold">{months.join(', ')}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setMonths([]);
+                setCurrentPage(1);
+              }}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+            >
+              <X className="w-3 h-3" />
+              <span>Clear month filter</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Error Notice */}

@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from './api';
-import { AccountScope, AppSettings, BootstrapPayload, FilterPreset, NavPage } from './types';
+import {
+  AccountScope,
+  AppSettings,
+  BootstrapPayload,
+  FilterPreset,
+  NavPage,
+  TransactionsFilterHandoff,
+} from './types';
 import { LoginScreen } from './components/LoginScreen';
 import { TopNav } from './components/TopNav';
 import { AddSyncModal } from './components/AddSyncModal';
@@ -31,7 +38,7 @@ export const App: React.FC = () => {
 
   // Navigation state
   const [activePage, setActivePage] = useState<NavPage>('dashboard');
-  const [prefilterCategory, setPrefilterCategory] = useState<string | null>(null);
+  const [prefilterHandoff, setPrefilterHandoff] = useState<TransactionsFilterHandoff | null>(null);
 
   // Data Bootstrap state
   const [bootstrapLoading, setBootstrapLoading] = useState(false);
@@ -116,10 +123,10 @@ export const App: React.FC = () => {
     }
   };
 
-  // Navigate to Transactions with a specific category filter from Dashboard drill-down
-  const handleNavigateToTransactions = (category?: string) => {
-    if (category) {
-      setPrefilterCategory(category);
+  // Navigate to Transactions with category & time-period filters from Dashboard drill-down
+  const handleNavigateToTransactions = (handoff?: TransactionsFilterHandoff) => {
+    if (handoff) {
+      setPrefilterHandoff(handoff);
     }
     setActivePage('transactions');
   };
@@ -238,8 +245,8 @@ export const App: React.FC = () => {
                 financialYears={bootstrapData.financial_years}
                 savedFilters={bootstrapData.saved_filters}
                 onSavedFiltersChange={handleSavedFiltersChange}
-                initialCategory={prefilterCategory}
-                onClearInitialCategory={() => setPrefilterCategory(null)}
+                initialFilters={prefilterHandoff}
+                onClearInitialFilters={() => setPrefilterHandoff(null)}
               />
             )}
 

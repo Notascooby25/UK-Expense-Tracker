@@ -32,6 +32,15 @@ export interface FilterPreset {
   date_to?: string;
 }
 
+export interface TransactionsFilterHandoff {
+  category?: string;
+  bank?: string;
+  financial_year?: string;
+  date_from?: string;
+  date_to?: string;
+  months?: string[];
+}
+
 export interface StartupHealth {
   healthy: boolean;
   errors: string[];

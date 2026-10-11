@@ -190,6 +190,7 @@ def _filter_transactions_df(
     financial_year: str = "All",
     date_from: str = "",
     date_to: str = "",
+    months: list[str] | None = None,
 ) -> pd.DataFrame:
     """Apply unified Transactions & Export filters while preserving `_row_id`."""
     if df.empty:
@@ -223,6 +224,10 @@ def _filter_transactions_df(
         ts_to = pd.to_datetime(date_to, errors="coerce")
         if pd.notna(ts_to):
             out = out[out["Date"] <= ts_to.normalize()]
+    if months and not out.empty:
+        out = out[
+            out["Date"].dt.strftime("%B").isin(months) | out["Date"].dt.strftime("%b").isin(months)
+        ]
 
     return out
 
@@ -383,6 +388,7 @@ def list_transactions(
     financial_year: str = Query("All"),
     date_from: str = Query(""),
     date_to: str = Query(""),
+    months: str = Query(""),
     limit: int = Query(100, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     _user: str = Depends(require_auth),
@@ -390,6 +396,7 @@ def list_transactions(
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
     cat_list = [c.strip() for c in categories.split(",") if c.strip()]
+    month_list = [m.strip() for m in months.split(",") if m.strip()]
     filtered = _filter_transactions_df(
         df,
         search=search,
@@ -401,6 +408,7 @@ def list_transactions(
         financial_year=financial_year,
         date_from=date_from,
         date_to=date_to,
+        months=month_list,
     )
     total = int(len(filtered))
     sliced = filtered.iloc[offset : offset + limit]
@@ -424,11 +432,13 @@ def export_transactions_csv(
     financial_year: str = Query("All"),
     date_from: str = Query(""),
     date_to: str = Query(""),
+    months: str = Query(""),
     _user: str = Depends(require_auth),
 ) -> StreamingResponse:
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
     cat_list = [c.strip() for c in categories.split(",") if c.strip()]
+    month_list = [m.strip() for m in months.split(",") if m.strip()]
     filtered = _filter_transactions_df(
         df,
         search=search,
@@ -440,6 +450,7 @@ def export_transactions_csv(
         financial_year=financial_year,
         date_from=date_from,
         date_to=date_to,
+        months=month_list,
     )
     export_df = filtered[COLS].copy() if not filtered.empty else pd.DataFrame(columns=COLS)
     if not export_df.empty:

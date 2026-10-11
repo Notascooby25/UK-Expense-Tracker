@@ -138,6 +138,7 @@ export const api = {
       financial_year?: string;
       date_from?: string;
       date_to?: string;
+      months?: string[];
       limit?: number;
       offset?: number;
     }
@@ -153,6 +154,7 @@ export const api = {
       financial_year: params.financial_year || 'All',
       date_from: params.date_from || '',
       date_to: params.date_to || '',
+      months: (params.months || []).join(','),
       limit: String(params.limit ?? 100),
       offset: String(params.offset ?? 0),
     });
@@ -176,6 +178,7 @@ export const api = {
       financial_year?: string;
       date_from?: string;
       date_to?: string;
+      months?: string[];
     }
   ) {
     const q = new URLSearchParams({
@@ -189,6 +192,7 @@ export const api = {
       financial_year: params.financial_year || 'All',
       date_from: params.date_from || '',
       date_to: params.date_to || '',
+      months: (params.months || []).join(','),
     });
     return `/api/transactions/export?${q.toString()}`;
   },
