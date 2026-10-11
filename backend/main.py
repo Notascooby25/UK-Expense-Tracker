@@ -39,6 +39,7 @@ from backend.auth import (
     require_auth,
     verify_session_token,
 )
+from backend.changelog import APP_VERSION, CHANGELOG
 from backend.gsheets import fetch_google_sheet_dataframe
 from backend.storage import (
     ACCOUNT_SCOPES,
@@ -63,8 +64,6 @@ from backend.storage import (
     save_settings,
     save_transactions,
 )
-
-APP_VERSION = "0.5.0"
 
 app = FastAPI(title="UK Expense Tracker API", version=APP_VERSION)
 
@@ -244,6 +243,7 @@ def auth_status(request: Request) -> dict[str, Any]:
         "notice": notice,
         "require_auth_secrets": is_auth_secrets_required(),
         "version": APP_VERSION,
+        "changelog": CHANGELOG,
     }
 
 
@@ -297,6 +297,7 @@ def get_bootstrap(
         "scope": norm_scope,
         "scopes": ACCOUNT_SCOPES,
         "version": APP_VERSION,
+        "changelog": CHANGELOG,
         "total_transactions": int(len(df)),
         "master_categories": get_master_categories(df, settings),
         "master_banks": get_master_banks(df, settings),

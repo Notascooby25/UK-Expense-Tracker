@@ -429,3 +429,27 @@ def test_transactions_filter_by_date_range_and_months(api_env):
     assert r_exp_jan.status_code == 200
     assert "18/01/2026,Council Tax" in r_exp_jan.text
     assert "18/02/2026,Council Tax" not in r_exp_jan.text
+
+
+def test_version_and_changelog_exposed_in_auth_and_bootstrap(api_env):
+    """Verify /api/auth/status and /api/bootstrap expose version 0.6.0 and backfilled changelog."""
+    client = TestClient(app)
+
+    r_status = client.get("/api/auth/status")
+    assert r_status.status_code == 200
+    status_data = r_status.json()
+    assert status_data["version"] == "0.6.0"
+    assert "changelog" in status_data
+    assert len(status_data["changelog"]) == 6
+    assert status_data["changelog"][0]["version"] == "0.6.0"
+    assert status_data["changelog"][-1]["version"] == "0.1.0"
+
+    client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": DUMMY_CRED, "remember_me": False},
+    )
+    r_boot = client.get("/api/bootstrap?scope=Personal")
+    assert r_boot.status_code == 200
+    boot_data = r_boot.json()
+    assert boot_data["version"] == "0.6.0"
+    assert boot_data["changelog"] == status_data["changelog"]

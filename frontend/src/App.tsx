@@ -4,12 +4,14 @@ import {
   AccountScope,
   AppSettings,
   BootstrapPayload,
+  ChangelogEntry,
   FilterPreset,
   NavPage,
   TransactionsFilterHandoff,
 } from './types';
 import { LoginScreen } from './components/LoginScreen';
 import { TopNav } from './components/TopNav';
+import { AppFooter } from './components/AppFooter';
 import { AddSyncModal } from './components/AddSyncModal';
 import { DashboardPage } from './pages/DashboardPage';
 import { TransactionsPage } from './pages/TransactionsPage';
@@ -24,6 +26,8 @@ export const App: React.FC = () => {
   const [authenticated, setAuthenticated] = useState(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [requireSecrets, setRequireSecrets] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>('0.6.0');
+  const [changelog, setChangelog] = useState<ChangelogEntry[]>([]);
 
   // Scope & Theme state
   const [scope, setScope] = useState<AccountScope>(() => {
@@ -84,6 +88,8 @@ export const App: React.FC = () => {
         setAuthenticated(res.authenticated);
         setAuthNotice(res.notice);
         setRequireSecrets(res.require_auth_secrets);
+        if (res.version) setAppVersion(res.version);
+        if (res.changelog) setChangelog(res.changelog);
       } catch (err: unknown) {
         console.error('Failed to check auth status:', err);
       } finally {
@@ -101,6 +107,8 @@ export const App: React.FC = () => {
     try {
       const data = await api.getBootstrap(scope);
       setBootstrapData(data);
+      if (data.version) setAppVersion(data.version);
+      if (data.changelog) setChangelog(data.changelog);
     } catch (err: unknown) {
       setBootstrapError(err instanceof Error ? err.message : 'Failed to bootstrap application');
     } finally {
@@ -169,13 +177,16 @@ export const App: React.FC = () => {
   // Not authenticated -> show login screen
   if (!authenticated) {
     return (
-      <LoginScreen
-        notice={authNotice}
-        requireSecrets={requireSecrets}
-        onSuccess={() => {
-          setAuthenticated(true);
-        }}
-      />
+      <div className="min-h-screen flex flex-col bg-[#f4f6f8] dark:bg-[#263238]">
+        <LoginScreen
+          notice={authNotice}
+          requireSecrets={requireSecrets}
+          onSuccess={() => {
+            setAuthenticated(true);
+          }}
+        />
+        <AppFooter version={appVersion} changelog={changelog} />
+      </div>
     );
   }
 
@@ -269,6 +280,9 @@ export const App: React.FC = () => {
           </>
         ) : null}
       </main>
+
+      {/* Persistent App Footer & Changelog Modal */}
+      <AppFooter version={appVersion} changelog={changelog} />
 
       {/* Centered Add / Sync Popup Modal */}
       {bootstrapData && (

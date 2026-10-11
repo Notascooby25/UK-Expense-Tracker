@@ -3,6 +3,7 @@ import {
   AppSettings,
   BootstrapPayload,
   CategoryDrilldownPayload,
+  ChangelogEntry,
   DashboardPayload,
   FilterPreset,
   IntelligencePayload,
@@ -41,6 +42,7 @@ export const api = {
       notice: string | null;
       require_auth_secrets: boolean;
       version: string;
+      changelog?: ChangelogEntry[];
     }>('/api/auth/status');
   },
 

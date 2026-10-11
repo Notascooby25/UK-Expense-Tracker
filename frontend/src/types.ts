@@ -52,10 +52,18 @@ export interface StartupHealth {
   assets_file: string;
 }
 
+export interface ChangelogEntry {
+  version: string;
+  date: string;
+  title: string;
+  changes: string[];
+}
+
 export interface BootstrapPayload {
   scope: AccountScope;
   scopes: AccountScope[];
   version: string;
+  changelog?: ChangelogEntry[];
   total_transactions: number;
   master_categories: string[];
   master_banks: string[];
