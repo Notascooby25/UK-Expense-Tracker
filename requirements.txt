@@ -4,3 +4,9 @@ plotly
 st-gsheets-connection
 Pillow
 streamlit-cookies-controller
+fastapi
+uvicorn[standard]
+python-multipart
+gspread
+google-auth
+httpx

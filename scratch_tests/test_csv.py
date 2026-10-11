@@ -29,7 +29,7 @@ for r in filtered_rows:
     cat = r['Category'].strip()
     tt = r['Transaction_Type']
     amt = float(r['Amount'])
-    
+
     if cat in internal_categories:
         spend_type = 'Internal Transfer'
     elif tt == 'Income':
@@ -45,7 +45,7 @@ for r in filtered_rows:
             spend_type = 'Committed Expense'
         else:
             spend_type = 'Variable Expense'
-            
+
     if spend_type == 'Variable Expense':
         var_exp[cat] = var_exp.get(cat, 0) + amt
     elif spend_type == 'Variable Refund':
@@ -66,4 +66,3 @@ for cat in all_cats:
 
 for cat, avg in sorted(results.items(), key=lambda x: x[1], reverse=True):
     print(f"{cat}: {avg:.2f}")
-

@@ -1,0 +1,872 @@
+"""FastAPI application entrypoint serving the UK Expense Tracker REST API and React SPA."""
+
+from __future__ import annotations
+
+import io
+import os
+import secrets
+from typing import Any
+
+import pandas as pd
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from backend.analytics import (
+    build_category_drilldown,
+    build_dashboard_data,
+    build_intelligence_data,
+    build_wealth_data,
+)
+from backend.auth import (
+    COOKIE_NAME,
+    SESSION_MAX_AGE_SECONDS,
+    create_session_token,
+    get_auth_credentials,
+    has_auth_secrets,
+    is_auth_secrets_required,
+    require_auth,
+    verify_session_token,
+)
+from backend.gsheets import fetch_google_sheet_dataframe
+from backend.storage import (
+    ACCOUNT_SCOPES,
+    BASE_DIR,
+    COLS,
+    apply_auto_rules,
+    apply_smart_dictionary,
+    calculate_uk_financial_year,
+    clean_string,
+    get_master_banks,
+    get_master_categories,
+    get_matching_auto_rule,
+    get_startup_health,
+    load_assets,
+    load_filters,
+    load_settings,
+    load_transactions,
+    normalize_scope,
+    parse_and_merge_import,
+    save_assets,
+    save_filters,
+    save_settings,
+    save_transactions,
+)
+
+APP_VERSION = "0.5.0"
+
+app = FastAPI(title="UK Expense Tracker API", version=APP_VERSION)
+
+
+# --- Pydantic Schemas ---
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    remember_me: bool = True
+
+
+class TransactionCreateRequest(BaseModel):
+    Date: str
+    Name: str
+    Amount: float
+    Transaction_Type: str = "Expense"
+    Bank: str = "Manual"
+    Category: str = ""
+    Notes: str = ""
+    Is_Subscription: bool = False
+
+
+class TransactionPatchRequest(BaseModel):
+    Date: str | None = None
+    Name: str | None = None
+    Amount: float | None = None
+    Transaction_Type: str | None = None
+    Bank: str | None = None
+    Category: str | None = None
+    Notes: str | None = None
+    Is_Subscription: bool | None = None
+
+
+class BulkTransactionsRequest(BaseModel):
+    action: str  # "update" or "delete"
+    row_ids: list[int] = Field(default_factory=list)
+    category: str | None = None
+    transaction_type: str | None = None
+    is_subscription: bool | None = None
+
+
+class GSheetsSyncRequest(BaseModel):
+    sheet_url: str | None = None
+    worksheet_name: str | None = None
+    auto_save_new: bool = True
+
+
+class PasteImportRequest(BaseModel):
+    pasted_text: str
+    source_format: str = "Auto-Detect"
+
+
+class SyncConfirmRow(BaseModel):
+    row_id: int | None = None
+    Date: str
+    Name: str
+    Amount: float
+    Transaction_Type: str
+    Bank: str
+    Category: str
+    Notes: str = ""
+    Is_Subscription: bool = False
+
+
+class SyncConfirmRequest(BaseModel):
+    rows: list[SyncConfirmRow]
+
+
+class IntelligenceActionRequest(BaseModel):
+    action: str
+    category: str | None = None
+    merchant: str | None = None
+    merchants: list[str] = Field(default_factory=list)
+    from_category: str | None = None
+    to_category: str | None = None
+
+
+class WealthBalanceSaveRequest(BaseModel):
+    month: str
+    balances: dict[str, float]
+
+
+class TestRuleRequest(BaseModel):
+    name: str = ""
+    notes: str = ""
+    amount: float = 0.0
+
+
+# --- Helpers ---
+def _serialize_tx_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Serialize DataFrame rows with stable integer row_id from index."""
+    if df.empty:
+        return []
+    rows: list[dict[str, Any]] = []
+    for idx, r in df.iterrows():
+        dt_val = pd.to_datetime(r["Date"], errors="coerce")
+        rows.append(
+            {
+                "row_id": int(r["_row_id"]) if "_row_id" in df.columns else int(idx),
+                "Date": dt_val.strftime("%Y-%m-%d") if pd.notna(dt_val) else "",
+                "Date_Display": dt_val.strftime("%d/%m/%Y") if pd.notna(dt_val) else "",
+                "Name": clean_string(r.get("Name", "")),
+                "Amount": round(float(r.get("Amount", 0.0)), 2),
+                "Transaction_Type": clean_string(r.get("Transaction_Type", "Expense")),
+                "Bank": clean_string(r.get("Bank", "")),
+                "Category": clean_string(r.get("Category", "")),
+                "Notes": clean_string(r.get("Notes", "")),
+                "Financial_Year": clean_string(r.get("Financial_Year", "")),
+                "Is_Subscription": bool(r.get("Is_Subscription", False)),
+            }
+        )
+    return rows
+
+
+def _filter_transactions_df(
+    df: pd.DataFrame,
+    search: str = "",
+    notes: str = "",
+    bank: str = "All",
+    category: str = "All",
+    categories: list[str] | None = None,
+    transaction_type: str = "Both",
+    financial_year: str = "All",
+    date_from: str = "",
+    date_to: str = "",
+) -> pd.DataFrame:
+    """Apply unified Transactions & Export filters while preserving `_row_id`."""
+    if df.empty:
+        out = pd.DataFrame(columns=COLS)
+        out["_row_id"] = pd.Series(dtype=int)
+        return out
+
+    out = df.copy()
+    out["_row_id"] = out.index
+    out = out.sort_values("Date", ascending=False)
+
+    if bank and bank not in {"All", "All Banks"}:
+        out = out[out["Bank"] == bank]
+    if category and category != "All":
+        out = out[out["Category"] == category]
+    if categories:
+        out = out[out["Category"].isin(categories)]
+    if transaction_type and transaction_type != "Both":
+        out = out[out["Transaction_Type"] == transaction_type]
+    if financial_year and financial_year != "All":
+        out = out[out["Financial_Year"] == financial_year]
+    if search:
+        out = out[out["Name"].str.contains(search.strip(), case=False, na=False, regex=False)]
+    if notes:
+        out = out[out["Notes"].str.contains(notes.strip(), case=False, na=False, regex=False)]
+    if date_from:
+        ts_from = pd.to_datetime(date_from, errors="coerce")
+        if pd.notna(ts_from):
+            out = out[out["Date"] >= ts_from.normalize()]
+    if date_to:
+        ts_to = pd.to_datetime(date_to, errors="coerce")
+        if pd.notna(ts_to):
+            out = out[out["Date"] <= ts_to.normalize()]
+
+    return out
+
+
+# --- Auth Endpoints ---
+@app.get("/api/auth/status")
+def auth_status(request: Request) -> dict[str, Any]:
+    token = request.cookies.get(COOKIE_NAME)
+    user = verify_session_token(token)
+    _, _, notice = get_auth_credentials()
+    return {
+        "authenticated": user is not None,
+        "username": user,
+        "notice": notice,
+        "require_auth_secrets": is_auth_secrets_required(),
+        "version": APP_VERSION,
+    }
+
+
+@app.post("/api/auth/login")
+def auth_login(payload: LoginRequest, response: Response) -> dict[str, Any]:
+    valid_user, valid_pass, notice = get_auth_credentials()
+    if valid_user is None or valid_pass is None:
+        raise HTTPException(status_code=503, detail=notice or "Auth secrets not configured.")
+
+    user_ok = secrets.compare_digest(payload.username.strip(), valid_user)
+    pass_ok = secrets.compare_digest(payload.password, valid_pass)
+    if not (user_ok and pass_ok):
+        raise HTTPException(status_code=401, detail="Incorrect username or password.")
+
+    max_age = SESSION_MAX_AGE_SECONDS if payload.remember_me else 24 * 60 * 60
+    token = create_session_token(valid_user, max_age=max_age)
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        max_age=max_age if payload.remember_me else None,
+        httponly=True,
+        samesite="lax",
+    )
+    return {"authenticated": True, "username": valid_user, "notice": notice}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(response: Response) -> dict[str, Any]:
+    response.delete_cookie(COOKIE_NAME)
+    return {"authenticated": False}
+
+
+# --- Bootstrap & Metadata ---
+@app.get("/api/bootstrap")
+def get_bootstrap(
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    settings = load_settings(norm_scope)
+    filters = load_filters(norm_scope)
+    health = get_startup_health(norm_scope, has_auth_secrets(), is_auth_secrets_required())
+    fys = (
+        sorted([str(x) for x in df["Financial_Year"].dropna().unique() if str(x).strip()])
+        if not df.empty
+        else []
+    )
+
+    return {
+        "scope": norm_scope,
+        "scopes": ACCOUNT_SCOPES,
+        "version": APP_VERSION,
+        "total_transactions": int(len(df)),
+        "master_categories": get_master_categories(df, settings),
+        "master_banks": get_master_banks(df, settings),
+        "financial_years": fys,
+        "settings": settings,
+        "saved_filters": filters,
+        "health": health,
+    }
+
+
+# --- Dashboard & Drilldown ---
+@app.get("/api/dashboard")
+def get_dashboard(
+    scope: str = Query("Personal"),
+    time_mode: str = Query("Financial Year"),
+    selected_period: str = Query("All"),
+    bank: str = Query("All Banks"),
+    hide_internal: bool = Query(True),
+    net_spend_mode: bool = Query(False),
+    ignore_legacy: bool = Query(True),
+    months: str = Query(""),
+    include_categories: str = Query(""),
+    exclude_categories: str = Query(""),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    settings = load_settings(norm_scope)
+    filters = {
+        "time_mode": time_mode,
+        "selected_period": selected_period,
+        "bank": bank,
+        "hide_internal": hide_internal,
+        "net_spend_mode": net_spend_mode,
+        "ignore_legacy": ignore_legacy,
+        "months": [m.strip() for m in months.split(",") if m.strip()],
+        "include_categories": [c.strip() for c in include_categories.split(",") if c.strip()],
+        "exclude_categories": [c.strip() for c in exclude_categories.split(",") if c.strip()],
+    }
+    return build_dashboard_data(df, settings, filters)
+
+
+@app.get("/api/dashboard/drilldown")
+def get_dashboard_drilldown(
+    scope: str = Query("Personal"),
+    category: str = Query(...),
+    time_mode: str = Query("Financial Year"),
+    selected_period: str = Query("All"),
+    bank: str = Query("All Banks"),
+    hide_internal: bool = Query(True),
+    net_spend_mode: bool = Query(False),
+    ignore_legacy: bool = Query(True),
+    months: str = Query(""),
+    include_categories: str = Query(""),
+    exclude_categories: str = Query(""),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    settings = load_settings(norm_scope)
+    filters = {
+        "time_mode": time_mode,
+        "selected_period": selected_period,
+        "bank": bank,
+        "hide_internal": hide_internal,
+        "net_spend_mode": net_spend_mode,
+        "ignore_legacy": ignore_legacy,
+        "months": [m.strip() for m in months.split(",") if m.strip()],
+        "include_categories": [c.strip() for c in include_categories.split(",") if c.strip()],
+        "exclude_categories": [c.strip() for c in exclude_categories.split(",") if c.strip()],
+    }
+    return build_category_drilldown(df, settings, filters, category)
+
+
+# --- Transactions (Unified Editor, Bulk Update & Export) ---
+@app.get("/api/transactions")
+def list_transactions(
+    scope: str = Query("Personal"),
+    search: str = Query(""),
+    notes: str = Query(""),
+    bank: str = Query("All"),
+    category: str = Query("All"),
+    categories: str = Query(""),
+    transaction_type: str = Query("Both"),
+    financial_year: str = Query("All"),
+    date_from: str = Query(""),
+    date_to: str = Query(""),
+    limit: int = Query(100, ge=1, le=10000),
+    offset: int = Query(0, ge=0),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    cat_list = [c.strip() for c in categories.split(",") if c.strip()]
+    filtered = _filter_transactions_df(
+        df,
+        search=search,
+        notes=notes,
+        bank=bank,
+        category=category,
+        categories=cat_list,
+        transaction_type=transaction_type,
+        financial_year=financial_year,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    total = int(len(filtered))
+    sliced = filtered.iloc[offset : offset + limit]
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "rows": _serialize_tx_rows(sliced),
+    }
+
+
+@app.get("/api/transactions/export")
+def export_transactions_csv(
+    scope: str = Query("Personal"),
+    search: str = Query(""),
+    notes: str = Query(""),
+    bank: str = Query("All"),
+    category: str = Query("All"),
+    categories: str = Query(""),
+    transaction_type: str = Query("Both"),
+    financial_year: str = Query("All"),
+    date_from: str = Query(""),
+    date_to: str = Query(""),
+    _user: str = Depends(require_auth),
+) -> StreamingResponse:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    cat_list = [c.strip() for c in categories.split(",") if c.strip()]
+    filtered = _filter_transactions_df(
+        df,
+        search=search,
+        notes=notes,
+        bank=bank,
+        category=category,
+        categories=cat_list,
+        transaction_type=transaction_type,
+        financial_year=financial_year,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    export_df = filtered[COLS].copy() if not filtered.empty else pd.DataFrame(columns=COLS)
+    if not export_df.empty:
+        export_df["Date"] = pd.to_datetime(export_df["Date"], errors="coerce").dt.strftime(
+            "%d/%m/%Y"
+        )
+    csv_bytes = export_df.to_csv(index=False, encoding="utf-8").encode("utf-8")
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="expense_export.csv"'},
+    )
+
+
+@app.post("/api/transactions")
+def create_transaction(
+    payload: TransactionCreateRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    settings = load_settings(norm_scope)
+
+    dt = pd.to_datetime(payload.Date, errors="coerce")
+    if pd.isna(dt):
+        raise HTTPException(status_code=400, detail="Invalid Date format.")
+
+    new_row_df = pd.DataFrame(
+        [
+            {
+                "Date": dt.normalize(),
+                "Name": clean_string(payload.Name),
+                "Amount": round(abs(float(payload.Amount)), 2),
+                "Transaction_Type": clean_string(payload.Transaction_Type) or "Expense",
+                "Bank": clean_string(payload.Bank) or "Manual",
+                "Category": clean_string(payload.Category),
+                "Notes": clean_string(payload.Notes),
+                "Financial_Year": calculate_uk_financial_year(dt.normalize()),
+                "Is_Subscription": bool(payload.Is_Subscription),
+            }
+        ]
+    )
+    new_row_df = apply_smart_dictionary(new_row_df)
+    new_row_df = apply_auto_rules(new_row_df, settings.get("auto_rules", []))
+
+    updated_df = pd.concat([df, new_row_df[COLS]], ignore_index=True)
+    save_transactions(norm_scope, updated_df)
+    created = _serialize_tx_rows(updated_df.tail(1))[0]
+    return {"saved": True, "row": created, "total": len(updated_df)}
+
+
+@app.patch("/api/transactions/{row_id}")
+def patch_transaction(
+    row_id: int,
+    payload: TransactionPatchRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    if row_id < 0 or row_id >= len(df):
+        raise HTTPException(status_code=404, detail="Transaction row not found.")
+
+    if payload.Date is not None:
+        dt = pd.to_datetime(payload.Date, errors="coerce")
+        if pd.isna(dt):
+            raise HTTPException(status_code=400, detail="Invalid Date.")
+        df.at[row_id, "Date"] = dt.normalize()
+        df.at[row_id, "Financial_Year"] = calculate_uk_financial_year(dt.normalize())
+    if payload.Name is not None:
+        df.at[row_id, "Name"] = clean_string(payload.Name)
+    if payload.Amount is not None:
+        df.at[row_id, "Amount"] = round(abs(float(payload.Amount)), 2)
+    if payload.Transaction_Type is not None:
+        df.at[row_id, "Transaction_Type"] = clean_string(payload.Transaction_Type)
+    if payload.Bank is not None:
+        df.at[row_id, "Bank"] = clean_string(payload.Bank)
+    if payload.Category is not None:
+        df.at[row_id, "Category"] = clean_string(payload.Category)
+    if payload.Notes is not None:
+        df.at[row_id, "Notes"] = clean_string(payload.Notes)
+    if payload.Is_Subscription is not None:
+        df.at[row_id, "Is_Subscription"] = bool(payload.Is_Subscription)
+
+    save_transactions(norm_scope, df)
+    single = df.loc[[row_id]].copy()
+    single["_row_id"] = single.index
+    return {"saved": True, "row": _serialize_tx_rows(single)[0]}
+
+
+@app.post("/api/transactions/bulk")
+def bulk_update_transactions(
+    payload: BulkTransactionsRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    valid_ids = [idx for idx in payload.row_ids if 0 <= idx < len(df)]
+    if not valid_ids:
+        return {"saved": False, "affected": 0}
+
+    if payload.action == "delete":
+        df = df.drop(index=valid_ids).reset_index(drop=True)
+        save_transactions(norm_scope, df)
+        return {"saved": True, "affected": len(valid_ids), "total": len(df)}
+
+    if payload.category is not None:
+        df.loc[valid_ids, "Category"] = clean_string(payload.category)
+    if payload.transaction_type is not None:
+        df.loc[valid_ids, "Transaction_Type"] = clean_string(payload.transaction_type)
+    if payload.is_subscription is not None:
+        df.loc[valid_ids, "Is_Subscription"] = bool(payload.is_subscription)
+
+    save_transactions(norm_scope, df)
+    return {"saved": True, "affected": len(valid_ids), "total": len(df)}
+
+
+# --- Sync & Import Endpoints ---
+@app.post("/api/sync/gsheets")
+def sync_from_gsheets(
+    payload: GSheetsSyncRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    settings = load_settings(norm_scope)
+    sheet_url = (payload.sheet_url or settings.get("monzo_sheet_url", "")).strip()
+    worksheet_name = (payload.worksheet_name or settings.get("monzo_sheet_worksheet", "")).strip()
+
+    if not sheet_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Monzo Sheet URL is empty. Enter your Google Sheet URL to sync.",
+        )
+
+    settings["monzo_sheet_url"] = sheet_url
+    if worksheet_name:
+        settings["monzo_sheet_worksheet"] = worksheet_name
+    save_settings(norm_scope, settings)
+
+    try:
+        raw_df = fetch_google_sheet_dataframe(sheet_url, settings["monzo_sheet_worksheet"])
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Google Sheets sync failed: {exc}") from exc
+
+    existing_df = load_transactions(norm_scope)
+    pre_len = len(existing_df)
+    merged_df, new_rows_df, updated_rows_df = parse_and_merge_import(
+        existing_df, raw_df, settings.get("auto_rules", []), source_format="Monzo"
+    )
+    save_transactions(norm_scope, merged_df)
+
+    # Tag new rows with their assigned row_ids in merged_df so inline review edits persist directly
+    if not new_rows_df.empty:
+        new_slice = merged_df.iloc[pre_len:].copy()
+        new_slice["_row_id"] = new_slice.index
+        serialized_new = _serialize_tx_rows(new_slice)
+    else:
+        serialized_new = []
+
+    return {
+        "saved": True,
+        "new_count": len(serialized_new),
+        "updated_count": len(updated_rows_df),
+        "new_rows": serialized_new,
+        "updated_rows": _serialize_tx_rows(updated_rows_df),
+    }
+
+
+@app.post("/api/sync/import-file")
+async def import_csv_file(
+    file: UploadFile = File(...),
+    source_format: str = Form("Auto-Detect"),
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    settings = load_settings(norm_scope)
+    content = await file.read()
+    hdr = None if source_format == "Barclaycard" else 0
+    try:
+        raw_df = pd.read_csv(io.BytesIO(content), header=hdr, encoding="utf-8")
+    except Exception:
+        raw_df = pd.read_csv(io.BytesIO(content), header=hdr, encoding="ISO-8859-1")
+
+    existing_df = load_transactions(norm_scope)
+    pre_len = len(existing_df)
+    merged_df, new_rows_df, updated_rows_df = parse_and_merge_import(
+        existing_df, raw_df, settings.get("auto_rules", []), source_format=source_format
+    )
+    save_transactions(norm_scope, merged_df)
+
+    if not new_rows_df.empty:
+        new_slice = merged_df.iloc[pre_len:].copy()
+        new_slice["_row_id"] = new_slice.index
+        serialized_new = _serialize_tx_rows(new_slice)
+    else:
+        serialized_new = []
+
+    return {
+        "saved": True,
+        "new_count": len(serialized_new),
+        "updated_count": len(updated_rows_df),
+        "new_rows": serialized_new,
+    }
+
+
+@app.post("/api/sync/import-paste")
+def import_pasted_rows(
+    payload: PasteImportRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    settings = load_settings(norm_scope)
+    hdr = None if payload.source_format == "Barclaycard" else 0
+    try:
+        raw_df = pd.read_csv(io.StringIO(payload.pasted_text), sep="\t", header=hdr)
+        if len(raw_df.columns) < 2:
+            raw_df = pd.read_csv(io.StringIO(payload.pasted_text), sep=",", header=hdr)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Paste parse error: {exc}") from exc
+
+    existing_df = load_transactions(norm_scope)
+    pre_len = len(existing_df)
+    merged_df, new_rows_df, updated_rows_df = parse_and_merge_import(
+        existing_df, raw_df, settings.get("auto_rules", []), source_format=payload.source_format
+    )
+    save_transactions(norm_scope, merged_df)
+
+    if not new_rows_df.empty:
+        new_slice = merged_df.iloc[pre_len:].copy()
+        new_slice["_row_id"] = new_slice.index
+        serialized_new = _serialize_tx_rows(new_slice)
+    else:
+        serialized_new = []
+
+    return {
+        "saved": True,
+        "new_count": len(serialized_new),
+        "updated_count": len(updated_rows_df),
+        "new_rows": serialized_new,
+    }
+
+
+# --- Intelligence Endpoints ---
+@app.get("/api/intelligence")
+def get_intelligence(
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    settings = load_settings(norm_scope)
+    return build_intelligence_data(df, settings)
+
+
+@app.post("/api/intelligence/action")
+def execute_intelligence_action(
+    payload: IntelligenceActionRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    settings = load_settings(norm_scope)
+
+    action = payload.action
+    if action == "mark_committed" and payload.category:
+        committed = list(settings.get("committed_categories", []))
+        if payload.category not in committed:
+            committed.append(payload.category)
+        settings["committed_categories"] = committed
+        save_settings(norm_scope, settings)
+
+    elif action == "ignore_recurring":
+        targets = payload.merchants or ([payload.merchant] if payload.merchant else [])
+        ignored = list(settings.get("ignore_recurring", []))
+        for m in targets:
+            if m and m not in ignored:
+                ignored.append(m)
+        settings["ignore_recurring"] = ignored
+        save_settings(norm_scope, settings)
+
+    elif action == "restore_recurring":
+        targets = set(payload.merchants or ([payload.merchant] if payload.merchant else []))
+        settings["ignore_recurring"] = [
+            m for m in settings.get("ignore_recurring", []) if m not in targets
+        ]
+        save_settings(norm_scope, settings)
+
+    elif action == "flag_subscriptions":
+        targets = set(payload.merchants or ([payload.merchant] if payload.merchant else []))
+        if targets and not df.empty:
+            mask = df["Name"].isin(targets)
+            df.loc[mask, "Is_Subscription"] = True
+            save_transactions(norm_scope, df)
+
+    elif action == "apply_standardisation" and payload.from_category and payload.to_category:
+        if not df.empty:
+            df.loc[df["Category"] == payload.from_category, "Category"] = payload.to_category
+            save_transactions(norm_scope, df)
+
+    elif action == "mute_suggestion":
+        targets = payload.merchants or ([payload.merchant] if payload.merchant else [])
+        muted = list(settings.get("ignore_suggestions", []))
+        existing_lower = {str(x).lower().strip() for x in muted}
+        for m in targets:
+            if m and m.lower().strip() not in existing_lower:
+                muted.append(m.strip())
+                existing_lower.add(m.lower().strip())
+        settings["ignore_suggestions"] = muted
+        save_settings(norm_scope, settings)
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported intelligence action: {action}")
+
+    return {"saved": True, "intelligence": build_intelligence_data(df, settings)}
+
+
+# --- Wealth & Assets Endpoints ---
+@app.get("/api/wealth")
+def get_wealth(
+    scope: str = Query("Personal"),
+    ignore_legacy: bool = Query(True),
+    timeframe: str = Query("All Time"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    assets_data = load_assets(norm_scope)
+    return build_wealth_data(df, assets_data, ignore_legacy=ignore_legacy, timeframe=timeframe)
+
+
+@app.post("/api/wealth/balances")
+def save_wealth_balances(
+    payload: WealthBalanceSaveRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    month_str = clean_string(payload.month)
+    if not month_str:
+        raise HTTPException(status_code=400, detail="Month (YYYY-MM) is required.")
+    assets_data = load_assets(norm_scope)
+    cleaned_balances = {
+        clean_string(k): round(float(v), 2)
+        for k, v in payload.balances.items()
+        if clean_string(k) and v is not None and float(v) > 0
+    }
+    assets_data[month_str] = cleaned_balances
+    save_assets(norm_scope, assets_data)
+    df = load_transactions(norm_scope)
+    return {"saved": True, "wealth": build_wealth_data(df, assets_data)}
+
+
+# --- Settings & Filter Presets Endpoints ---
+@app.put("/api/settings")
+def update_settings(
+    payload: dict[str, Any],
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    current = load_settings(norm_scope)
+    current.update(payload)
+    saved = save_settings(norm_scope, current)
+    df = load_transactions(norm_scope)
+    return {
+        "saved": True,
+        "settings": saved,
+        "master_categories": get_master_categories(df, saved),
+    }
+
+
+@app.post("/api/settings/apply-rules")
+def apply_rules_to_existing(
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    settings = load_settings(norm_scope)
+    if not df.empty:
+        df = apply_auto_rules(df, settings.get("auto_rules", []))
+        save_transactions(norm_scope, df)
+    return {"saved": True, "total": len(df)}
+
+
+@app.post("/api/settings/test-rule")
+def test_rule_match(
+    payload: TestRuleRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    settings = load_settings(norm_scope)
+    preview_row = {"Name": payload.name, "Notes": payload.notes, "Amount": payload.amount}
+    idx, rule = get_matching_auto_rule(preview_row, settings.get("auto_rules", []))
+    return {
+        "matched": rule is not None,
+        "rule_index": idx,
+        "rule": rule,
+    }
+
+
+@app.put("/api/filters")
+def update_filter_presets(
+    payload: dict[str, Any],
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    save_filters(norm_scope, payload)
+    return {"saved": True, "saved_filters": load_filters(norm_scope)}
+
+
+# --- Static SPA Hosting (Production) ---
+FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
+if os.path.isdir(FRONTEND_DIST):
+    assets_dir = os.path.join(FRONTEND_DIST, "assets")
+    if os.path.isdir(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API route not found")
+        candidate = os.path.join(FRONTEND_DIST, full_path)
+        if full_path and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))

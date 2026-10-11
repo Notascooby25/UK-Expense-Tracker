@@ -11,3 +11,18 @@ services:
       - ./data:/app/data
       - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
     restart: unless-stopped
+
+  expense-tracker-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: uk_expense_tracker_web
+    ports:
+      - "8502:8502"
+    environment:
+      - EXPENSE_TRACKER_DATA_DIR=/app/data
+      - EXPENSE_TRACKER_ENV=production
+    volumes:
+      - ./data:/app/data
+      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
+    restart: unless-stopped

@@ -33,3 +33,9 @@ Working back up database & APP- testing/
 !*.example.csv
 !*.example.json
 !.streamlit/secrets.toml.example
+
+# Frontend build artifacts & dependencies
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+.superpowers/

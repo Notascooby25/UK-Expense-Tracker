@@ -32,7 +32,7 @@ components:
 
 **Creative North Star: "The Command Center"**
 
-The UK Expense Tracker is a focused, high-contrast, data-dense application designed for rapid scanning and operation. It eschews unnecessary ornamentation in favor of a sleek, modern, and punchy aesthetic, aggressively using color to highlight key actions and semantic meaning. 
+The UK Expense Tracker is a focused, high-contrast, data-dense application designed for rapid scanning and operation. It eschews unnecessary ornamentation in favor of a sleek, modern, and punchy aesthetic, aggressively using color to highlight key actions and semantic meaning.
 
 **Key Characteristics:**
 - High data density over whitespace.

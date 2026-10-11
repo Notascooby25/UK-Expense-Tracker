@@ -1,0 +1,189 @@
+export type AccountScope = 'Personal' | 'Joint';
+export type NavPage = 'dashboard' | 'transactions' | 'intelligence' | 'wealth' | 'settings';
+
+export interface AutoRule {
+  name_contains: string;
+  notes_contains: string;
+  max_amount: number;
+  category: string;
+}
+
+export interface AppSettings {
+  ignore_suggestions: string[];
+  ignore_recurring: string[];
+  custom_categories: string[];
+  custom_banks: string[];
+  committed_categories: string[];
+  committed_presets: Record<string, string[]>;
+  auto_rules: AutoRule[];
+  monzo_sheet_url: string;
+  monzo_sheet_worksheet: string;
+}
+
+export interface FilterPreset {
+  type?: string;
+  fy?: string;
+  cats?: string[];
+  merchant?: string;
+  notes?: string;
+  bank?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface StartupHealth {
+  healthy: boolean;
+  errors: string[];
+  notes: string[];
+  data_dir: string;
+  db_file: string;
+  settings_file: string;
+  filters_file: string;
+  assets_file: string;
+}
+
+export interface BootstrapPayload {
+  scope: AccountScope;
+  scopes: AccountScope[];
+  version: string;
+  total_transactions: number;
+  master_categories: string[];
+  master_banks: string[];
+  financial_years: string[];
+  settings: AppSettings;
+  saved_filters: Record<string, FilterPreset>;
+  health: StartupHealth;
+}
+
+export interface TransactionRow {
+  row_id: number;
+  Date: string;
+  Date_Display: string;
+  Name: string;
+  Amount: number;
+  Transaction_Type: 'Expense' | 'Income' | string;
+  Bank: string;
+  Category: string;
+  Notes: string;
+  Financial_Year: string;
+  Is_Subscription: boolean;
+}
+
+export interface DashboardPayload {
+  filter_options: {
+    financial_years: string[];
+    calendar_years: string[];
+    banks: string[];
+    rolling_periods: string[];
+  };
+  metrics: {
+    total_income: number;
+    committed_expenses: number;
+    variable_expenses: number;
+    net_expenses: number;
+    net_flow: number;
+    months_in_period: number;
+    avg_income: number;
+    avg_baseline: number;
+    spare_cash: number;
+    avg_monthly_spend: number;
+  };
+  recent_delta: {
+    month: string;
+    committed_actual: number;
+    committed_avg: number;
+    committed_diff: number;
+    variable_actual: number;
+    variable_avg: number;
+    variable_diff: number;
+  } | null;
+  cashflow_breakdown: {
+    income_total: number;
+    income: Array<{
+      category: string;
+      avg_monthly: number;
+      merchants: Array<{ name: string; avg_monthly: number }>;
+    }>;
+    committed_total: number;
+    committed: Array<{ category: string; avg_monthly: number }>;
+    variable_total: number;
+    variable: Array<{ category: string; avg_monthly: number }>;
+    savings: Array<{
+      category: string;
+      avg_monthly: number;
+      merchants: Array<{ name: string; avg_monthly: number }>;
+    }>;
+  };
+  charts: {
+    monthly_cashflow: Array<{
+      month: string;
+      income: number;
+      committed: number;
+      variable: number;
+      total_expense: number;
+    }>;
+    cumulative_wealth: Array<{ date: string; cumulative: number }>;
+    top_categories: Array<{ category: string; amount: number }>;
+    top_merchants: Array<{ merchant: string; amount: number }>;
+    bank_category_breakdown: Array<{ bank: string; category: string; amount: number }>;
+  };
+}
+
+export interface CategoryDrilldownPayload {
+  category: string;
+  total_expenditure: number;
+  total_refunds: number;
+  net_cost: number;
+  monthly_average: number;
+  merchants: Array<{
+    Name: string;
+    Transaction_Type: string;
+    Total_Amount: number;
+    Transactions: number;
+    Last_Date: string;
+    Is_Subscription: boolean;
+  }>;
+  transactions: TransactionRow[];
+}
+
+export interface IntelligencePayload {
+  recurring_candidates: Array<{
+    Merchant: string;
+    Category: string;
+    Freq_Months: number;
+    Avg_Monthly: number;
+  }>;
+  ignored_recurring: string[];
+  subscription_candidates: Array<{
+    merchant: string;
+    count: number;
+    total_amount: number;
+    category: string;
+  }>;
+  standardisation_suggestions: Array<{
+    Merchant: string;
+    From: string;
+    Suggested: string;
+  }>;
+}
+
+export interface WealthPayload {
+  known_assets: string[];
+  assets_by_month: Record<string, Record<string, number>>;
+  latest_month: string;
+  latest_balances: Record<string, number>;
+  latest_net_worth: number;
+  net_worth_delta: number;
+  net_worth_series: Array<{ month: string; total: number }>;
+  asset_timeline: Array<Record<string, string | number>>;
+  internal_timeline: Array<Record<string, string | number>>;
+  internal_transactions: Array<{
+    Date: string;
+    Name: string;
+    Amount: number;
+    Transaction_Type: string;
+    Bank: string;
+    Category: string;
+    Notes: string;
+  }>;
+}

@@ -8,4 +8,3 @@ df = df[(df['Date'].dt.year == 2026) & (df['Date'].dt.month.isin([3,4,5,6,7,8]))
 print(f"Rows matching Concert: {len(df[df['Category'].str.contains('Concert', na=False)])}")
 for _, row in df[df['Category'].str.contains('Concert', na=False)].iterrows():
     print(row['Date'], row['Category'], row['Amount'], row['Transaction_Type'])
-
