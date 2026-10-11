@@ -191,6 +191,19 @@ def test_dashboard_and_category_drilldown(api_env):
     assert drill["merchants"][0]["Name"] == "Council Tax"
     assert len(drill["transactions"]) == 2
 
+    # Click-to-inspect category drilldown for Savings (Internal Category with hide_internal=True)
+    r_drill_sav = client.get(
+        "/api/dashboard/drilldown?scope=Personal&category=Savings&hide_internal=true"
+    )
+    assert r_drill_sav.status_code == 200
+    drill_sav = r_drill_sav.json()
+    assert drill_sav["category"] == "Savings"
+    assert drill_sav["total_expenditure"] == 400.00
+    assert len(drill_sav["merchants"]) == 1
+    assert drill_sav["merchants"][0]["Name"] == "Monzo Pot"
+    assert len(drill_sav["transactions"]) == 1
+    assert drill_sav["transactions"][0]["Transaction_Type"] == "Expense"
+
     # Calendar Year with single month selection (February)
     r_dash_feb = client.get(
         "/api/dashboard?scope=Personal&time_mode=Calendar+Year&selected_period=2026&months=February"

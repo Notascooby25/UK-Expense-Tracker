@@ -701,12 +701,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
               {data?.cashflow_breakdown.savings.map((catItem) => (
                 <div key={catItem.category} className="text-xs">
-                  <div className="flex justify-between font-semibold">
-                    <span>{catItem.category}</span>
+                  <button
+                    type="button"
+                    onClick={() => loadDrilldown(catItem.category)}
+                    className={`w-full text-left flex justify-between font-medium p-1 rounded transition-colors ${
+                      inspectCategory === catItem.category
+                        ? 'bg-[#3498db]/20 font-bold text-white'
+                        : 'hover:text-[#3498db] hover:bg-[#263238]'
+                    }`}
+                  >
+                    <span className="truncate pr-1">{catItem.category}</span>
                     <span className="tabular-nums text-[#3498db]">
                       £{catItem.avg_monthly.toFixed(2)}
                     </span>
-                  </div>
+                  </button>
                   {catItem.merchants.map((m) => (
                     <div
                       key={m.name}
@@ -801,7 +809,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       {drilldown.transactions.slice(0, 50).map((tx) => (
                         <tr key={tx.row_id}>
                           <td className="py-1 px-2.5 tabular-nums whitespace-nowrap">
-                            {tx.Date_Display}
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                  tx.Transaction_Type === 'Expense'
+                                    ? 'bg-[#ff5252]'
+                                    : 'bg-[#2ecc71]'
+                                }`}
+                                title={tx.Transaction_Type}
+                              />
+                              <span>{tx.Date_Display || tx.Date}</span>
+                            </div>
                           </td>
                           <td className="py-1 px-2.5 font-medium truncate max-w-[140px]">
                             {tx.Name}

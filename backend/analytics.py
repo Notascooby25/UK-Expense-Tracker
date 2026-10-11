@@ -399,8 +399,13 @@ def build_category_drilldown(
     df: pd.DataFrame, settings: dict[str, Any], filters: dict[str, Any], category: str
 ) -> dict[str, Any]:
     """Compute merchant summary and individual transactions for a clicked category."""
-    df_v, months_in_period, _ = prepare_filtered_dashboard_df(df, settings, filters)
     target = clean_string(category)
+    drill_filters = dict(filters)
+    if target in INTERNAL_CATEGORIES:
+        drill_filters["hide_internal"] = False
+    drill_filters["net_spend_mode"] = False
+
+    df_v, months_in_period, _ = prepare_filtered_dashboard_df(df, settings, drill_filters)
     if df_v.empty or not target:
         return {
             "category": target,
