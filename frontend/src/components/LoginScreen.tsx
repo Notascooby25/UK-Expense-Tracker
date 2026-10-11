@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, AlertCircle, ShieldAlert } from 'lucide-react';
 import { api } from '../api';
+import { BrandLogo } from './BrandLogo';
 
 interface LoginScreenProps {
   notice: string | null;
@@ -37,9 +38,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     <div className="flex-1 flex items-center justify-center px-4 py-8 bg-[#f4f6f8] dark:bg-[#263238] text-[#121a21] dark:text-white">
       <div className="w-full max-w-md bg-white dark:bg-[#1b262c] border border-[#d6dfe5] dark:border-[#32424a] rounded-lg p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-lg bg-[#e74c3c] flex items-center justify-center text-white">
-            <Lock className="w-5 h-5" />
-          </div>
+          <BrandLogo size="md" />
           <div>
             <h1 className="text-xl font-bold tracking-tight">UK Expense Tracker</h1>
             <p className="text-sm text-[#485b69] dark:text-[#b0bec5]">

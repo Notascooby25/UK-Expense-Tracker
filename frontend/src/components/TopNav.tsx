@@ -10,9 +10,9 @@ import {
   Moon,
   LogOut,
   CheckCircle2,
-  Wallet,
 } from 'lucide-react';
 import { AccountScope, NavPage } from '../types';
+import { BrandLogo } from './BrandLogo';
 
 interface TopNavProps {
   scope: AccountScope;
@@ -50,10 +50,8 @@ export const TopNav: React.FC<TopNavProps> = ({
       <div className="max-w-[1400px] mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
         {/* Brand + Personal/Joint Scope Switcher */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#e74c3c] flex items-center justify-center text-white">
-              <Wallet className="w-4 h-4" />
-            </div>
+          <div className="flex items-center gap-2.5">
+            <BrandLogo size="sm" />
             <span className="font-bold text-base tracking-tight text-[#121a21] dark:text-white">
               UK Expense Tracker
             </span>

@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.6.2"
+APP_VERSION = "0.6.3"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.6.3",
+        "date": "11 Oct 2026",
+        "title": "Sterling Growth Logo, Favicon & PWA Install Support",
+        "changes": [
+            "Introduced new 'Sterling Growth' brand identity featuring rising analytics bars and a British Pound (£) badge on a vibrant red background.",
+            "Integrated custom favicon across SVG, ICO, and high-DPI PNG formats.",
+            "Added Progressive Web App (PWA) manifest and Apple Touch icons for installing the app to mobile and desktop home screens.",
+            "Updated in-app header navigation and login screens with the new unified brand logo.",
+        ],
+    },
     {
         "version": "0.6.2",
         "date": "11 Oct 2026",

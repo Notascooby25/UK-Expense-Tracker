@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff5e4d"/>
+      <stop offset="50%" stop-color="#e74c3c"/>
+      <stop offset="100%" stop-color="#c0392b"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle Background -->
+  <rect x="16" y="16" width="480" height="480" rx="110" fill="url(#bgGrad)"/>
+
+  <!-- Rising Financial Analytics Bars -->
+  <!-- Baseline -->
+  <rect x="76" y="390" width="360" height="24" rx="12" fill="#ffffff"/>
+
+  <!-- Bar 1 -->
+  <rect x="110" y="270" width="64" height="120" rx="16" fill="#ffffff"/>
+
+  <!-- Bar 2 -->
+  <rect x="210" y="200" width="64" height="190" rx="16" fill="#ffffff"/>
+
+  <!-- Bar 3 -->
+  <rect x="310" y="130" width="64" height="260" rx="16" fill="#ffffff"/>
+
+  <!-- Upward Trend Accent Path -->
+  <path d="M142 245 L242 175 L342 105" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-dasharray="16 14"/>
+
+  <!-- Accent Circle Badge for British Pound (£) -->
+  <g filter="url(#shadow)">
+    <circle cx="395" cy="115" r="75" fill="#ffffff"/>
+    <text x="395" y="148" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="96" font-weight="900" fill="#e74c3c" text-anchor="middle">£</text>
+  </g>
+</svg>
