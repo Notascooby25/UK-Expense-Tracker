@@ -602,9 +602,18 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
       {/* Error Notice */}
       {error && (
-        <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-lg flex items-center gap-2 text-xs text-red-300">
-          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-          <span>{error}</span>
+        <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-lg flex items-center justify-between gap-2 text-xs text-red-300">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadTransactions()}
+            className="px-2.5 py-1 rounded bg-red-900/60 hover:bg-red-800 text-white font-medium transition-colors"
+          >
+            Retry
+          </button>
         </div>
       )}
 

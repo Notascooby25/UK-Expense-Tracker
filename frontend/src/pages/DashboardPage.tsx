@@ -14,6 +14,7 @@ import {
   Calendar,
   CalendarDays,
   RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import {
   BarChart,
@@ -81,6 +82,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [inspectCategory, setInspectCategory] = useState<string | null>(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const [drilldown, setDrilldown] = useState<CategoryDrilldownPayload | null>(null);
+  const [drilldownError, setDrilldownError] = useState<string | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   // Chart visibility toggles
   const [showMonthlyChart, setShowMonthlyChart] = useState(true);
@@ -96,6 +99,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const fetchDashboard = async () => {
     const reqId = ++latestRequestIdRef.current;
     setLoading(true);
+    setDashboardError(null);
     try {
       const res = await api.getDashboard(scope, {
         time_mode: timeMode,
@@ -115,9 +119,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           loadDrilldown(inspectCategory);
         }
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (reqId === latestRequestIdRef.current) {
         console.error('Failed to load dashboard', err);
+        const msg = err instanceof Error ? err.message : 'Failed to load dashboard';
+        setDashboardError(msg);
       }
     } finally {
       if (reqId === latestRequestIdRef.current) {
@@ -129,7 +135,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const loadDrilldown = async (cat: string) => {
     const reqId = ++latestDrilldownIdRef.current;
     setInspectCategory(cat);
+    // Instantly clear previous category's drilldown to prevent stale data display
+    setDrilldown(null);
     setDrilldownLoading(true);
+    setDrilldownError(null);
     try {
       const res = await api.getCategoryDrilldown(scope, cat, {
         time_mode: timeMode,
@@ -145,9 +154,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       if (reqId === latestDrilldownIdRef.current) {
         setDrilldown(res);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (reqId === latestDrilldownIdRef.current) {
         console.error('Failed to load category drilldown', err);
+        const msg = err instanceof Error ? err.message : 'Failed to load details';
+        setDrilldownError(msg);
       }
     } finally {
       if (reqId === latestDrilldownIdRef.current) {
@@ -243,6 +254,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Dashboard Network/Server Error Notice */}
+      {dashboardError && (
+        <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-lg flex items-center justify-between gap-2 text-xs text-red-300">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+            <span>{dashboardError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchDashboard()}
+            className="px-2.5 py-1 rounded bg-red-900/60 hover:bg-red-800 text-white font-medium transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* 1. Compact Filter Bar */}
       <section className="bg-white dark:bg-[#1b262c] border border-[#d6dfe5] dark:border-[#32424a] rounded-lg p-3.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -740,7 +768,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   <Eye className="w-4 h-4" />
                 </span>
                 <h3 className="text-sm font-bold">Category Inspection: {inspectCategory}</h3>
-                {drilldown && (
+                {drilldown && drilldown.category === inspectCategory && (
                   <span className="text-xs text-[#485b69] dark:text-[#b0bec5] tabular-nums">
                     (Expenditure: £{drilldown.total_expenditure.toFixed(2)} | Refunds: £
                     {drilldown.total_refunds.toFixed(2)} | Net: £{drilldown.net_cost.toFixed(2)})
@@ -748,21 +776,48 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => onNavigateToTransactions(inspectCategory)}
-                className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-[#e74c3c] hover:bg-[#d64232] text-white"
-              >
-                <span>Open in Transactions Editor</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigateToTransactions(inspectCategory)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-[#e74c3c] hover:bg-[#d64232] text-white"
+                >
+                  <span>Open in Transactions Editor</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectCategory(null);
+                    setDrilldown(null);
+                  }}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg text-[#485b69] dark:text-[#b0bec5] hover:text-[#121a21] dark:hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             {drilldownLoading ? (
-              <div className="text-xs text-[#485b69] dark:text-[#b0bec5] py-4 text-center">
-                Loading merchants and transactions for {inspectCategory}...
+              <div className="text-xs text-[#485b69] dark:text-[#b0bec5] py-4 text-center flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-cyan-500" />
+                <span>Loading merchants and transactions for {inspectCategory}...</span>
               </div>
-            ) : drilldown && drilldown.merchants.length > 0 ? (
+            ) : drilldownError ? (
+              <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-lg flex items-center justify-between gap-2 text-xs text-red-300">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                  <span>{drilldownError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadDrilldown(inspectCategory)}
+                  className="px-2.5 py-1 rounded bg-red-900/60 hover:bg-red-800 text-white font-medium transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : drilldown && drilldown.category === inspectCategory && drilldown.merchants.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {/* Merchants Table */}
                 <div className="border border-[#d6dfe5] dark:border-[#32424a] rounded-lg overflow-x-auto max-h-56">
