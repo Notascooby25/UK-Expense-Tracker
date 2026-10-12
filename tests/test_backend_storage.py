@@ -188,7 +188,7 @@ def test_parse_and_merge_hsbc_barclaycard_and_monzo_dedup():
             },
         ]
     )
-    merged, new_rows, updated_rows = parse_and_merge_import(
+    merged, new_rows, updated_rows, _ = parse_and_merge_import(
         existing, hsbc_raw, rules=[], source_format="HSBC"
     )
     assert len(merged) == 2
@@ -212,7 +212,7 @@ def test_parse_and_merge_hsbc_barclaycard_and_monzo_dedup():
             }
         ]
     )
-    merged2, new_rows2, updated_rows2 = parse_and_merge_import(
+    merged2, new_rows2, updated_rows2, _ = parse_and_merge_import(
         merged, hsbc_update, rules=[], source_format="HSBC"
     )
     assert len(merged2) == 2
@@ -226,7 +226,7 @@ def test_parse_and_merge_hsbc_barclaycard_and_monzo_dedup():
             ["15/05/2026", "Amazon UK", "Card", "Spend", "Shopping", "0", "39.99"],
         ]
     )
-    merged3, new_rows3, _ = parse_and_merge_import(
+    merged3, new_rows3, _, _ = parse_and_merge_import(
         merged2, bc_raw, rules=[], source_format="Barclaycard"
     )
     assert len(merged3) == 3
@@ -235,3 +235,41 @@ def test_parse_and_merge_hsbc_barclaycard_and_monzo_dedup():
     assert new_rows3.iloc[0]["Name"] == "Amazon UK"
     assert new_rows3.iloc[0]["Amount"] == 39.99
     assert new_rows3.iloc[0]["Category"] == "Shopping"
+
+
+def test_parse_and_merge_preserves_existing_category_and_flags_conflict():
+    existing = pd.DataFrame(
+        [
+            {
+                "Date": pd.to_datetime("2026-05-13").normalize(),
+                "Name": "Tesco Express",
+                "Amount": 15.50,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Groceries",  # User modified in app
+                "Notes": "",
+                "Financial_Year": "2026-2027",
+                "Is_Subscription": False,
+            }
+        ]
+    )
+    incoming_raw = pd.DataFrame(
+        [
+            {
+                "Date": "13/05/2026",
+                "Name": "Tesco Express",
+                "Amount": "-15.50",
+                "Category": "Shopping",  # Default Monzo category
+            }
+        ]
+    )
+    merged, new_rows, updated_rows, conflicts = parse_and_merge_import(
+        existing, incoming_raw, rules=[], source_format="Monzo"
+    )
+    # Existing category Groceries MUST be preserved in merged_df
+    assert merged.loc[0, "Category"] == "Groceries"
+    assert new_rows.empty
+    assert len(conflicts) == 1
+    assert conflicts[0]["_row_id"] == 0
+    assert conflicts[0]["current_category"] == "Groceries"
+    assert conflicts[0]["incoming_category"] == "Shopping"

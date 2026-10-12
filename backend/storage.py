@@ -534,15 +534,15 @@ def parse_and_merge_import(
     raw_df: pd.DataFrame,
     rules: list[dict[str, Any]],
     source_format: str = "Auto-Detect",
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[dict[str, Any]]]:
     """
     Parse an incoming DataFrame (Monzo, HSBC, Barclaycard, or Manual/Auto-Detect)
     and merge against existing_df.
-    Returns (merged_df, new_rows_df, updated_rows_df).
+    Returns (merged_df, new_rows_df, updated_rows_df, conflicts_list).
     """
     if raw_df is None or raw_df.empty:
         empty = pd.DataFrame(columns=COLS)
-        return existing_df.copy(), empty, empty
+        return existing_df.copy(), empty, empty, []
 
     new_df = raw_df.copy()
     cols_lower = [str(c).lower().strip() for c in new_df.columns]
@@ -608,7 +608,7 @@ def parse_and_merge_import(
 
     if "Date" not in new_df.columns:
         empty = pd.DataFrame(columns=COLS)
-        return existing_df.copy(), empty, empty
+        return existing_df.copy(), empty, empty, []
 
     if "Transaction_Type" not in new_df.columns and "Amount" in new_df.columns:
         raw_amt = pd.to_numeric(
@@ -635,6 +635,7 @@ def parse_and_merge_import(
     merged_df = existing_df.copy() if not existing_df.empty else pd.DataFrame(columns=COLS)
     new_list: list[pd.Series] = []
     updated_list: list[pd.Series] = []
+    conflicts_list: list[dict[str, Any]] = []
     matched_indexes: set[Any] = set()
 
     for _, row in new_df.iterrows():
@@ -657,9 +658,25 @@ def parse_and_merge_import(
             matched_indexes.add(idx)
             old_cat = clean_string(merged_df.loc[idx, "Category"])
             new_cat = clean_string(row["Category"])
-            if old_cat != new_cat and new_cat != "":
+            if old_cat == "" and new_cat != "":
                 merged_df.loc[idx, "Category"] = new_cat
                 updated_list.append(row[COLS])
+            elif old_cat != "" and new_cat != "" and old_cat != new_cat:
+                conflicts_list.append(
+                    {
+                        "_row_id": int(idx),
+                        "Date": str(
+                            pd.to_datetime(merged_df.loc[idx, "Date"]).strftime("%Y-%m-%d")
+                        ),
+                        "Date_Display": str(
+                            pd.to_datetime(merged_df.loc[idx, "Date"]).strftime("%d/%m/%Y")
+                        ),
+                        "Name": str(merged_df.loc[idx, "Name"]),
+                        "Amount": float(merged_df.loc[idx, "Amount"]),
+                        "current_category": old_cat,
+                        "incoming_category": new_cat,
+                    }
+                )
         else:
             new_list.append(row[COLS])
 
@@ -675,6 +692,7 @@ def parse_and_merge_import(
         merged_df.reset_index(drop=True),
         new_rows_df.reset_index(drop=True),
         updated_rows_df.reset_index(drop=True),
+        conflicts_list,
     )
 
 

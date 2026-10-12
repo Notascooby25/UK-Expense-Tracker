@@ -132,6 +132,15 @@ class SyncConfirmRequest(BaseModel):
     rows: list[SyncConfirmRow]
 
 
+class ConflictResolutionItem(BaseModel):
+    row_id: int
+    category: str
+
+
+class ResolveConflictsRequest(BaseModel):
+    resolutions: list[ConflictResolutionItem]
+
+
 class IntelligenceActionRequest(BaseModel):
     action: str
     category: str | None = None
@@ -607,7 +616,7 @@ def sync_from_gsheets(
 
     existing_df = load_transactions(norm_scope)
     pre_len = len(existing_df)
-    merged_df, new_rows_df, updated_rows_df = parse_and_merge_import(
+    merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
         existing_df, raw_df, settings.get("auto_rules", []), source_format="Monzo"
     )
     save_transactions(norm_scope, merged_df)
@@ -626,6 +635,7 @@ def sync_from_gsheets(
         "updated_count": len(updated_rows_df),
         "new_rows": serialized_new,
         "updated_rows": _serialize_tx_rows(updated_rows_df),
+        "conflicts": conflicts,
     }
 
 
@@ -647,7 +657,7 @@ async def import_csv_file(
 
     existing_df = load_transactions(norm_scope)
     pre_len = len(existing_df)
-    merged_df, new_rows_df, updated_rows_df = parse_and_merge_import(
+    merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
         existing_df, raw_df, settings.get("auto_rules", []), source_format=source_format
     )
     save_transactions(norm_scope, merged_df)
@@ -664,6 +674,7 @@ async def import_csv_file(
         "new_count": len(serialized_new),
         "updated_count": len(updated_rows_df),
         "new_rows": serialized_new,
+        "conflicts": conflicts,
     }
 
 
@@ -685,7 +696,7 @@ def import_pasted_rows(
 
     existing_df = load_transactions(norm_scope)
     pre_len = len(existing_df)
-    merged_df, new_rows_df, updated_rows_df = parse_and_merge_import(
+    merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
         existing_df, raw_df, settings.get("auto_rules", []), source_format=payload.source_format
     )
     save_transactions(norm_scope, merged_df)
@@ -702,7 +713,26 @@ def import_pasted_rows(
         "new_count": len(serialized_new),
         "updated_count": len(updated_rows_df),
         "new_rows": serialized_new,
+        "conflicts": conflicts,
     }
+
+
+@app.post("/api/sync/resolve-conflicts")
+def resolve_sync_conflicts(
+    payload: ResolveConflictsRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    df = load_transactions(norm_scope)
+    applied_count = 0
+    for item in payload.resolutions:
+        if 0 <= item.row_id < len(df):
+            df.at[item.row_id, "Category"] = clean_string(item.category)
+            applied_count += 1
+    if applied_count > 0:
+        save_transactions(norm_scope, df)
+    return {"saved": True, "applied_count": applied_count}
 
 
 # --- Intelligence Endpoints ---

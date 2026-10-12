@@ -9,7 +9,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { api } from '../api';
-import { AccountScope, AppSettings, TransactionRow } from '../types';
+import { AccountScope, AppSettings, SyncConflict, TransactionRow } from '../types';
 
 interface AddSyncModalProps {
   isOpen: boolean;
@@ -56,6 +56,8 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
 
   // Newly synced / imported rows preview (already saved to disk; inline edits auto-save)
   const [reviewRows, setReviewRows] = useState<TransactionRow[]>([]);
+  const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
+  const [resolvingConflicts, setResolvingConflicts] = useState(false);
   const [syncSummary, setSyncSummary] = useState<{ newCount: number; updatedCount: number } | null>(
     null
   );
@@ -69,9 +71,10 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
     try {
       const res = await api.syncGoogleSheets(scope, sheetUrl, worksheetName);
       setReviewRows(res.new_rows);
+      setConflicts(res.conflicts || []);
       setSyncSummary({ newCount: res.new_count, updatedCount: res.updated_count });
       onDataChanged(
-        `Synced Monzo Sheet: ${res.new_count} new, ${res.updated_count} updated (auto-saved)`
+        `Synced Monzo Sheet: ${res.new_count} new transaction(s) auto-saved`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google Sheets sync failed.');
@@ -126,8 +129,9 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
         }
         const res = await api.importCsvFile(scope, selectedFile, bankFormat);
         setReviewRows(res.new_rows);
+        setConflicts(res.conflicts || []);
         setSyncSummary({ newCount: res.new_count, updatedCount: res.updated_count });
-        onDataChanged(`Imported CSV: ${res.new_count} new, ${res.updated_count} updated`);
+        onDataChanged(`Imported CSV: ${res.new_count} new transaction(s)`);
       } else {
         if (!pastedText.trim()) {
           setError('Paste spreadsheet rows first.');
@@ -136,14 +140,58 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
         }
         const res = await api.importPastedText(scope, pastedText, bankFormat);
         setReviewRows(res.new_rows);
+        setConflicts(res.conflicts || []);
         setSyncSummary({ newCount: res.new_count, updatedCount: res.updated_count });
         setPastedText('');
-        onDataChanged(`Imported pasted data: ${res.new_count} new, ${res.updated_count} updated`);
+        onDataChanged(`Imported pasted data: ${res.new_count} new transaction(s)`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleKeepConflict = (rowId: number) => {
+    setConflicts((prev) => prev.filter((c) => c._row_id !== rowId));
+    onDataChanged('Kept current app category');
+  };
+
+  const handleKeepAllConflicts = () => {
+    setConflicts([]);
+    onDataChanged('Kept all current app categories');
+  };
+
+  const handleApplyMonzoConflict = async (conflict: SyncConflict) => {
+    setResolvingConflicts(true);
+    try {
+      await api.resolveSyncConflicts(scope, [
+        { row_id: conflict._row_id, category: conflict.incoming_category },
+      ]);
+      setConflicts((prev) => prev.filter((c) => c._row_id !== conflict._row_id));
+      onDataChanged(`Updated "${conflict.Name}" to Monzo category "${conflict.incoming_category}"`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update category.');
+    } finally {
+      setResolvingConflicts(false);
+    }
+  };
+
+  const handleApplyAllMonzoConflicts = async () => {
+    if (conflicts.length === 0) return;
+    setResolvingConflicts(true);
+    try {
+      await api.resolveSyncConflicts(
+        scope,
+        conflicts.map((c) => ({ row_id: c._row_id, category: c.incoming_category }))
+      );
+      const count = conflicts.length;
+      setConflicts([]);
+      onDataChanged(`Updated ${count} transaction(s) to incoming Monzo category`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update categories.');
+    } finally {
+      setResolvingConflicts(false);
     }
   };
 
@@ -169,7 +217,7 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
     >
       <div
         className={`w-full ${
-          reviewRows.length > 0 ? 'max-w-4xl' : 'max-w-xl'
+          reviewRows.length > 0 || conflicts.length > 0 ? 'max-w-4xl' : 'max-w-xl'
         } bg-white dark:bg-[#1b262c] border border-[#d6dfe5] dark:border-[#32424a] rounded-lg overflow-hidden max-h-[90vh] flex flex-col`}
       >
         {/* Modal Header */}
@@ -494,20 +542,26 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
 
           {/* Newly Synced / Imported Review Table */}
           {syncSummary && (
-            <div className="pt-3 border-t border-[#d6dfe5] dark:border-[#32424a] space-y-2">
+            <div className="pt-3 border-t border-[#d6dfe5] dark:border-[#32424a] space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-semibold text-[#2ecc71]">
-                  <CheckCircle2 className="w-4 h-4" />
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>
-                    Saved {syncSummary.newCount} new transaction(s) and updated{' '}
-                    {syncSummary.updatedCount} existing category match(es).
+                    Saved {syncSummary.newCount} new transaction(s)
+                    {syncSummary.updatedCount > 0
+                      ? ` and filled ${syncSummary.updatedCount} missing category record(s)`
+                      : ''}
+                    {conflicts.length > 0
+                      ? `. ${conflicts.length} category difference(s) detected below.`
+                      : '.'}
                   </span>
                 </div>
-                {reviewRows.length > 0 && (
+                {(reviewRows.length > 0 || conflicts.length > 0) && (
                   <button
                     type="button"
                     onClick={() => {
                       setReviewRows([]);
+                      setConflicts([]);
                       setSyncSummary(null);
                     }}
                     className="text-xs text-[#485b69] dark:text-[#b0bec5] hover:underline"
@@ -516,6 +570,99 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
                   </button>
                 )}
               </div>
+
+              {/* Category Differences Review Section */}
+              {conflicts.length > 0 && (
+                <div className="p-3.5 rounded-lg border border-amber-300 dark:border-amber-600/40 bg-amber-50 dark:bg-amber-950/20 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 dark:text-amber-200">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span>Category Differences Detected ({conflicts.length})</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300/90 mt-0.5">
+                        Monzo has different categories for these existing transactions. By default, your app categories were kept safe. You can overwrite them below if you prefer.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        disabled={resolvingConflicts}
+                        onClick={handleKeepAllConflicts}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-md border border-[#d6dfe5] dark:border-[#32424a] bg-white dark:bg-[#1b262c] hover:bg-gray-50 dark:hover:bg-[#263238] text-[#121a21] dark:text-white"
+                      >
+                        Keep All in App
+                      </button>
+                      <button
+                        type="button"
+                        disabled={resolvingConflicts}
+                        onClick={handleApplyAllMonzoConflicts}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-md bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white"
+                      >
+                        {resolvingConflicts ? 'Updating...' : 'Update All to Monzo'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border border-amber-200 dark:border-amber-700/30 rounded-lg overflow-x-auto max-h-52 bg-white dark:bg-[#1b262c]">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-[#f4f6f8] dark:bg-[#263238] text-[#485b69] dark:text-[#b0bec5] border-b border-[#d6dfe5] dark:border-[#32424a]">
+                        <tr>
+                          <th className="py-2 px-2.5">Date</th>
+                          <th className="py-2 px-2.5">Merchant</th>
+                          <th className="py-2 px-2.5 text-right">Amount</th>
+                          <th className="py-2 px-2.5">In App (Current)</th>
+                          <th className="py-2 px-2.5">In Monzo</th>
+                          <th className="py-2 px-2.5 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#d6dfe5] dark:divide-[#32424a]">
+                        {conflicts.map((conflict) => (
+                          <tr key={conflict._row_id}>
+                            <td className="py-1.5 px-2.5 whitespace-nowrap tabular-nums">
+                              {conflict.Date_Display}
+                            </td>
+                            <td className="py-1.5 px-2.5 font-medium">{conflict.Name}</td>
+                            <td className="py-1.5 px-2.5 text-right tabular-nums">
+                              £{conflict.Amount.toFixed(2)}
+                            </td>
+                            <td className="py-1.5 px-2.5">
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                                {conflict.current_category}
+                              </span>
+                            </td>
+                            <td className="py-1.5 px-2.5">
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                {conflict.incoming_category}
+                              </span>
+                            </td>
+                            <td className="py-1.5 px-2.5 text-right whitespace-nowrap">
+                              <div className="inline-flex gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={resolvingConflicts}
+                                  onClick={() => handleKeepConflict(conflict._row_id)}
+                                  className="px-2 py-0.5 rounded text-[11px] font-medium border border-[#d6dfe5] dark:border-[#32424a] hover:bg-gray-100 dark:hover:bg-[#263238]"
+                                >
+                                  Keep Mine
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={resolvingConflicts}
+                                  onClick={() => handleApplyMonzoConflict(conflict)}
+                                  className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-600 hover:bg-amber-700 text-white"
+                                >
+                                  Use Monzo
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {reviewRows.length > 0 && (
                 <div className="border border-[#d6dfe5] dark:border-[#32424a] rounded-lg overflow-x-auto max-h-60">

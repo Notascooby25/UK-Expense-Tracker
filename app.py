@@ -725,12 +725,10 @@ def process_new_data(new_df, source_format="Auto-Detect"):
             if matches:
                 idx = matches[0]
                 matched_indexes.add(idx)
-                if (
-                    clean_string(st.session_state.df.loc[idx, "Category"])
-                    != clean_string(row["Category"])
-                    and row["Category"] != ""
-                ):
-                    st.session_state.df.loc[idx, "Category"] = row["Category"]
+                old_cat = clean_string(st.session_state.df.loc[idx, "Category"])
+                new_cat = clean_string(row["Category"])
+                if old_cat == "" and new_cat != "":
+                    st.session_state.df.loc[idx, "Category"] = new_cat
                     updated_list.append(row[COLS])
             else:
                 new_list.append(row[COLS])

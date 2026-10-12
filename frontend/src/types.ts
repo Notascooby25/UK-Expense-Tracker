@@ -210,3 +210,22 @@ export interface WealthPayload {
     Notes: string;
   }>;
 }
+
+export interface SyncConflict {
+  _row_id: number;
+  Date: string;
+  Date_Display: string;
+  Name: string;
+  Amount: number;
+  current_category: string;
+  incoming_category: string;
+}
+
+export interface SyncResponse {
+  saved: boolean;
+  new_count: number;
+  updated_count: number;
+  new_rows: TransactionRow[];
+  updated_rows?: TransactionRow[];
+  conflicts?: SyncConflict[];
+}

@@ -7,6 +7,7 @@ import {
   DashboardPayload,
   FilterPreset,
   IntelligencePayload,
+  SyncResponse,
   TransactionRow,
   WealthPayload,
 } from './types';
@@ -264,13 +265,7 @@ export const api = {
   },
 
   syncGoogleSheets(scope: AccountScope, sheet_url: string, worksheet_name: string) {
-    return requestJson<{
-      saved: boolean;
-      new_count: number;
-      updated_count: number;
-      new_rows: TransactionRow[];
-      updated_rows: TransactionRow[];
-    }>(`/api/sync/gsheets?scope=${encodeURIComponent(scope)}`, {
+    return requestJson<SyncResponse>(`/api/sync/gsheets?scope=${encodeURIComponent(scope)}`, {
       method: 'POST',
       body: JSON.stringify({ sheet_url, worksheet_name }),
     });
@@ -280,27 +275,30 @@ export const api = {
     const form = new FormData();
     form.append('file', file);
     form.append('source_format', source_format);
-    return requestJson<{
-      saved: boolean;
-      new_count: number;
-      updated_count: number;
-      new_rows: TransactionRow[];
-    }>(`/api/sync/import-file?scope=${encodeURIComponent(scope)}`, {
+    return requestJson<SyncResponse>(`/api/sync/import-file?scope=${encodeURIComponent(scope)}`, {
       method: 'POST',
       body: form,
     });
   },
 
   importPastedText(scope: AccountScope, pasted_text: string, source_format: string) {
-    return requestJson<{
-      saved: boolean;
-      new_count: number;
-      updated_count: number;
-      new_rows: TransactionRow[];
-    }>(`/api/sync/import-paste?scope=${encodeURIComponent(scope)}`, {
+    return requestJson<SyncResponse>(`/api/sync/import-paste?scope=${encodeURIComponent(scope)}`, {
       method: 'POST',
       body: JSON.stringify({ pasted_text, source_format }),
     });
+  },
+
+  resolveSyncConflicts(
+    scope: AccountScope,
+    resolutions: Array<{ row_id: number; category: string }>
+  ) {
+    return requestJson<{ saved: boolean; applied_count: number }>(
+      `/api/sync/resolve-conflicts?scope=${encodeURIComponent(scope)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ resolutions }),
+      }
+    );
   },
 
   getIntelligence(scope: AccountScope) {

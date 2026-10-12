@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.6.3"
+APP_VERSION = "0.6.4"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.6.4",
+        "date": "12 Oct 2026",
+        "title": "Category Conflict Protection on Monzo Sync & Imports",
+        "changes": [
+            "Protected manual category changes made in the app from being overwritten during Monzo Google Sheet sync or CSV imports.",
+            "Added automatic category conflict detection that highlights whenever an incoming transaction has a different category from the app.",
+            "Introduced an interactive Category Differences Review section in the sync modal with per-transaction 'Keep Mine' / 'Use Monzo' actions and one-click bulk 'Keep All in App' / 'Update All to Monzo' buttons.",
+            "Kept user app categories safe by default if the sync window is closed without resolving differences.",
+        ],
+    },
     {
         "version": "0.6.3",
         "date": "11 Oct 2026",

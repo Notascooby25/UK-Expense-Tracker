@@ -509,3 +509,31 @@ def test_wealth_delete_month_and_manage_accounts(api_env):
     )
     assert r_clear.status_code == 200
     assert "2026-02" not in r_clear.json()["wealth"]["assets_by_month"]
+
+
+def test_resolve_sync_conflicts_endpoint(api_env):
+    """Verify /api/sync/resolve-conflicts updates conflicting categories atomically."""
+    client = TestClient(app)
+    client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": DUMMY_CRED, "remember_me": False},
+    )
+
+    tx_before = client.get("/api/transactions?scope=Personal").json()
+    target_row_id = tx_before["rows"][0]["row_id"]
+    orig_cat = tx_before["rows"][0]["Category"]
+    target_cat = "Holidays" if orig_cat != "Holidays" else "Eating Out"
+
+    # Resolve conflict for target_row_id
+    resp = client.post(
+        "/api/sync/resolve-conflicts?scope=Personal",
+        json={"resolutions": [{"row_id": target_row_id, "category": target_cat}]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["saved"] is True
+    assert resp.json()["applied_count"] == 1
+
+    # Verify transaction row category was updated
+    tx_after = client.get("/api/transactions?scope=Personal").json()
+    row_after = next(r for r in tx_after["rows"] if r["row_id"] == target_row_id)
+    assert row_after["Category"] == target_cat
