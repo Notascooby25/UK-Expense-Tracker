@@ -718,6 +718,9 @@ def build_wealth_data(
         "latest_month": sorted_months[-1]
         if sorted_months
         else pd.Timestamp.now().strftime("%Y-%m"),
+        "latest_date": sorted_months[-1]
+        if sorted_months
+        else pd.Timestamp.now().strftime("%Y-%m-%d"),
         "latest_balances": latest_balances,
         "latest_net_worth": latest_nw,
         "net_worth_delta": nw_delta,

@@ -151,7 +151,8 @@ class IntelligenceActionRequest(BaseModel):
 
 
 class WealthBalanceSaveRequest(BaseModel):
-    month: str
+    date: str = ""
+    month: str = ""
     balances: dict[str, float]
 
 
@@ -831,9 +832,11 @@ def save_wealth_balances(
     _user: str = Depends(require_auth),
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
-    month_str = clean_string(payload.month)
-    if not month_str:
-        raise HTTPException(status_code=400, detail="Month (YYYY-MM) is required.")
+    snapshot_key = clean_string(payload.date or payload.month)
+    if not snapshot_key:
+        raise HTTPException(
+            status_code=400, detail="Snapshot date (YYYY-MM-DD) or month (YYYY-MM) is required."
+        )
     assets_data = load_assets(norm_scope)
     cleaned_balances = {
         clean_string(k): round(float(v), 2)
@@ -841,9 +844,9 @@ def save_wealth_balances(
         if clean_string(k) and v is not None and float(v) > 0
     }
     if cleaned_balances:
-        assets_data[month_str] = cleaned_balances
+        assets_data[snapshot_key] = cleaned_balances
     else:
-        assets_data.pop(month_str, None)
+        assets_data.pop(snapshot_key, None)
     save_assets(norm_scope, assets_data)
     df = load_transactions(norm_scope)
     return {"saved": True, "wealth": build_wealth_data(df, assets_data)}
@@ -856,11 +859,11 @@ def delete_wealth_month(
     _user: str = Depends(require_auth),
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
-    month_str = clean_string(month)
-    if not month_str:
-        raise HTTPException(status_code=400, detail="Month (YYYY-MM) is required.")
+    snapshot_key = clean_string(month)
+    if not snapshot_key:
+        raise HTTPException(status_code=400, detail="Snapshot date or month is required.")
     assets_data = load_assets(norm_scope)
-    assets_data.pop(month_str, None)
+    assets_data.pop(snapshot_key, None)
     save_assets(norm_scope, assets_data)
     df = load_transactions(norm_scope)
     return {"saved": True, "wealth": build_wealth_data(df, assets_data)}

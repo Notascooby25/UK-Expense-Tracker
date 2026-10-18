@@ -45,6 +45,28 @@ const ASSET_LINE_COLORS = [
   '#34495e',
 ];
 
+const formatSnapshotLabel = (dateStr: string): string => {
+  if (!dateStr) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  if (/^\d{4}-\d{2}$/.test(dateStr)) {
+    const [y, m] = dateStr.split('-');
+    const dateObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1);
+    return dateObj.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+  }
+  return dateStr;
+};
+
+const getTodayDateStr = (): string => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<WealthPayload | null>(null);
@@ -55,13 +77,8 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
   const [timeframe, setTimeframe] = useState('All Time');
   const [ignoreLegacy, setIgnoreLegacy] = useState(true);
 
-  // Monthly balance logger form state
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    return `${y}-${m}`;
-  });
+  // Balance logger form state (defaults to today's exact date YYYY-MM-DD)
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayDateStr);
   const [assetBalances, setAssetBalances] = useState<Record<string, number | ''>>({});
   const [newAssetName, setNewAssetName] = useState('');
 
@@ -100,8 +117,8 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     (wealth: WealthPayload, message: string) => {
       setData(wealth);
       syncModalStateFromWealth(wealth);
-      if (wealth.assets_by_month && wealth.assets_by_month[selectedMonth]) {
-        setAssetBalances(wealth.assets_by_month[selectedMonth]);
+      if (wealth.assets_by_month && wealth.assets_by_month[selectedDate]) {
+        setAssetBalances(wealth.assets_by_month[selectedDate]);
       } else if (wealth.latest_balances && Object.keys(wealth.latest_balances).length > 0) {
         setAssetBalances(wealth.latest_balances);
       } else {
@@ -114,7 +131,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
       setStatusMsg(message);
       setTimeout(() => setStatusMsg((cur) => (cur === message ? null : cur)), 3000);
     },
-    [selectedMonth, syncModalStateFromWealth]
+    [selectedDate, syncModalStateFromWealth]
   );
 
   const loadWealth = useCallback(async () => {
@@ -125,9 +142,9 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
       setData(res);
       syncModalStateFromWealth(res);
 
-      // Pre-fill balances for the selected month if available
-      if (res.assets_by_month && res.assets_by_month[selectedMonth]) {
-        setAssetBalances(res.assets_by_month[selectedMonth]);
+      // Pre-fill balances for the selected date if available
+      if (res.assets_by_month && res.assets_by_month[selectedDate]) {
+        setAssetBalances(res.assets_by_month[selectedDate]);
       } else if (res.latest_balances) {
         // Fallback to latest balances as baseline
         setAssetBalances(res.latest_balances);
@@ -137,7 +154,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     } finally {
       setLoading(false);
     }
-  }, [scope, ignoreLegacy, timeframe, selectedMonth, syncModalStateFromWealth]);
+  }, [scope, ignoreLegacy, timeframe, selectedDate, syncModalStateFromWealth]);
 
   useEffect(() => {
     loadWealth();
@@ -155,10 +172,11 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
   }, [showEditModal]);
 
   // Update asset balances when month changes
-  const handleMonthChange = (month: string) => {
-    setSelectedMonth(month);
-    if (data?.assets_by_month && data.assets_by_month[month]) {
-      setAssetBalances(data.assets_by_month[month]);
+  // Update asset balances when date changes
+  const handleDateChange = (date: string) => {
+    setSelectedDate(date);
+    if (data?.assets_by_month && data.assets_by_month[date]) {
+      setAssetBalances(data.assets_by_month[date]);
     } else {
       // Keep keys with empty or latest baseline
       const blank: Record<string, number | ''> = {};
@@ -213,8 +231,11 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
         }
       });
 
-      const res = await api.saveWealthBalances(scope, selectedMonth, numericPayload);
-      applyUpdatedWealth(res.wealth, `Balances for ${selectedMonth} saved!`);
+      const res = await api.saveWealthBalances(scope, selectedDate, numericPayload);
+      applyUpdatedWealth(
+        res.wealth,
+        `Balances for ${formatSnapshotLabel(selectedDate) || selectedDate} saved!`
+      );
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to save asset balances');
     }
@@ -427,10 +448,10 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
             <div>
               <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-emerald-400" />
-                <span>Monthly Balance Logger</span>
+                <span>Wealth Balance Logger</span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Record account balances for each month to build your net worth progression curve.
+                Record account balances on any specific date to build your net worth progression curve.
               </p>
             </div>
             <button
@@ -440,20 +461,31 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                 setShowEditModal(true);
               }}
               className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-[#263238] hover:bg-slate-700 text-cyan-300 border border-slate-700 transition-colors"
-              title="Open popup to scroll, edit, or delete saved months and accounts"
+              title="Open popup to scroll, edit, or delete saved dates and accounts"
             >
               <Pencil className="w-3.5 h-3.5" />
               <span>Edit History</span>
             </button>
           </div>
 
-          {/* Month Selector */}
+          {/* Date Selector */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-300">Selected Month (YYYY-MM)</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-slate-300">
+                Snapshot Date (DD/MM/YYYY)
+              </label>
+              <button
+                type="button"
+                onClick={() => handleDateChange(getTodayDateStr())}
+                className="text-[11px] text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
+              >
+                Set Today
+              </button>
+            </div>
             <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => handleMonthChange(e.target.value)}
+              type="date"
+              value={selectedDate}
+              onChange={(e) => handleDateChange(e.target.value)}
               className="w-full px-3 py-2 text-xs bg-[#263238] border border-slate-700 rounded-md text-slate-100 focus:outline-none focus:border-cyan-500 font-mono"
             />
           </div>
@@ -492,8 +524,8 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                       type="button"
                       onClick={() => handleClearOrRemoveAssetRow(asset)}
                       className="p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
-                      title={`Clear ${asset} for ${selectedMonth}`}
-                      aria-label={`Clear ${asset} for ${selectedMonth}`}
+                      title={`Clear ${asset} for ${formatSnapshotLabel(selectedDate) || selectedDate}`}
+                      aria-label={`Clear ${asset} for ${formatSnapshotLabel(selectedDate) || selectedDate}`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -531,7 +563,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
             className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium text-xs shadow-md transition-colors"
           >
             <Save className="w-4 h-4" />
-            <span>Save {selectedMonth} Balances</span>
+            <span>Save Balances for {formatSnapshotLabel(selectedDate) || selectedDate}</span>
           </button>
         </div>
 
@@ -564,7 +596,12 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
-                    <XAxis dataKey="month" stroke="#94a3b8" fontSize={11} />
+                    <XAxis
+                      dataKey="month"
+                      stroke="#94a3b8"
+                      fontSize={11}
+                      tickFormatter={formatSnapshotLabel}
+                    />
                     <YAxis
                       stroke="#94a3b8"
                       fontSize={11}
@@ -578,6 +615,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                         fontSize: '12px',
                         color: '#f8fafc',
                       }}
+                      labelFormatter={(label) => formatSnapshotLabel(String(label))}
                       formatter={(val: number) => [`£${val.toLocaleString()}`, 'Net Worth']}
                     />
                     <Area
@@ -615,7 +653,12 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={data.asset_timeline}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
-                    <XAxis dataKey="month" stroke="#94a3b8" fontSize={11} />
+                    <XAxis
+                      dataKey="month"
+                      stroke="#94a3b8"
+                      fontSize={11}
+                      tickFormatter={formatSnapshotLabel}
+                    />
                     <YAxis
                       stroke="#94a3b8"
                       fontSize={11}
@@ -629,6 +672,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                         fontSize: '12px',
                         color: '#f8fafc',
                       }}
+                      labelFormatter={(label) => formatSnapshotLabel(String(label))}
                       formatter={(val: number, name: string) => [
                         `£${val.toLocaleString()}`,
                         name,
@@ -751,7 +795,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Recorded Months ({recordedMonthsDesc.length})
+                Recorded Snapshots ({recordedMonthsDesc.length})
               </button>
               <button
                 type="button"
@@ -771,7 +815,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
               {modalTab === 'months' ? (
                 recordedMonthsDesc.length === 0 ? (
                   <div className="py-12 text-center text-xs text-slate-400">
-                    No monthly snapshots saved yet. Use the Monthly Balance Logger to record your first month.
+                    No snapshots saved yet. Use the Wealth Balance Logger to record your first snapshot.
                   </div>
                 ) : (
                   recordedMonthsDesc.map((month) => {
@@ -791,8 +835,11 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-700/60">
                           <div className="flex items-center gap-2.5">
-                            <span className="px-2.5 py-0.5 rounded bg-[#1b262c] border border-slate-700 font-mono text-xs font-bold text-emerald-400">
-                              {month}
+                            <span
+                              className="px-2.5 py-0.5 rounded bg-[#1b262c] border border-slate-700 font-mono text-xs font-bold text-emerald-400"
+                              title={month}
+                            >
+                              {formatSnapshotLabel(month)}
                             </span>
                             <span className="text-xs text-slate-300 font-mono">
                               Total:{' '}
@@ -810,17 +857,17 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-medium transition-colors"
                             >
                               <Save className="w-3.5 h-3.5" />
-                              <span>Save {month}</span>
+                              <span>Save {formatSnapshotLabel(month)}</span>
                             </button>
                             <button
                               type="button"
                               disabled={modalSaving}
                               onClick={() => handleDeleteMonth(month)}
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 disabled:opacity-50 text-red-200 text-xs font-medium transition-colors"
-                              title={`Delete entire ${month} snapshot`}
+                              title={`Delete snapshot for ${formatSnapshotLabel(month)}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete Month</span>
+                              <span>Delete Snapshot</span>
                             </button>
                           </div>
                         </div>

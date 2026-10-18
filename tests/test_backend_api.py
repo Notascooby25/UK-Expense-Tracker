@@ -537,3 +537,57 @@ def test_resolve_sync_conflicts_endpoint(api_env):
     tx_after = client.get("/api/transactions?scope=Personal").json()
     row_after = next(r for r in tx_after["rows"] if r["row_id"] == target_row_id)
     assert row_after["Category"] == target_cat
+
+
+def test_wealth_day_level_snapshots(api_env):
+    """Verify logging balances on specific dates (YYYY-MM-DD), mixed date/month sorting, and date deletion."""
+    client = TestClient(app)
+    client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": DUMMY_CRED, "remember_me": False},
+    )
+
+    # 1. Save an older monthly balance 2026-09
+    r_month = client.post(
+        "/api/wealth/balances?scope=Personal",
+        json={"month": "2026-09", "balances": {"Trading 212": 14000.0, "Cash ISA": 4500.0}},
+    )
+    assert r_month.status_code == 200
+
+    # 2. Save a specific date snapshot for 2026-10-30
+    r_day1 = client.post(
+        "/api/wealth/balances?scope=Personal",
+        json={"date": "2026-10-30", "balances": {"Trading 212": 15000.0, "Cash ISA": 5000.0}},
+    )
+    assert r_day1.status_code == 200
+
+    # 3. Save another snapshot close by on 2026-11-04
+    r_day2 = client.post(
+        "/api/wealth/balances?scope=Personal",
+        json={"date": "2026-11-04", "balances": {"Trading 212": 15200.0, "Cash ISA": 5050.0}},
+    )
+    assert r_day2.status_code == 200
+
+    w_data = r_day2.json()["wealth"]
+    assert "2026-09" in w_data["assets_by_month"]
+    assert "2026-10-30" in w_data["assets_by_month"]
+    assert "2026-11-04" in w_data["assets_by_month"]
+
+    # Verify chronological ordering in net_worth_series
+    months_in_series = [entry["month"] for entry in w_data["net_worth_series"]]
+    assert "2026-09" in months_in_series
+    assert "2026-10-30" in months_in_series
+    assert "2026-11-04" in months_in_series
+    assert months_in_series.index("2026-09") < months_in_series.index("2026-10-30")
+    assert months_in_series.index("2026-10-30") < months_in_series.index("2026-11-04")
+
+    # Verify latest_balances reflect 2026-11-04
+    assert w_data["latest_balances"]["Trading 212"] == 15200.0
+    assert w_data["latest_net_worth"] == 20250.0
+
+    # 4. Delete date snapshot 2026-10-30
+    r_del = client.delete("/api/wealth/balances/2026-10-30?scope=Personal")
+    assert r_del.status_code == 200
+    w_del = r_del.json()["wealth"]
+    assert "2026-10-30" not in w_del["assets_by_month"]
+    assert "2026-11-04" in w_del["assets_by_month"]

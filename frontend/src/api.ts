@@ -336,23 +336,31 @@ export const api = {
     return requestJson<WealthPayload>(`/api/wealth?${q.toString()}`);
   },
 
-  saveWealthBalances(scope: AccountScope, month: string, balances: Record<string, number>) {
+  saveWealthBalances(
+    scope: AccountScope,
+    dateOrMonth: string,
+    balances: Record<string, number>
+  ) {
     return requestJson<{ saved: boolean; wealth: WealthPayload }>(
       `/api/wealth/balances?scope=${encodeURIComponent(scope)}`,
       {
         method: 'POST',
-        body: JSON.stringify({ month, balances }),
+        body: JSON.stringify({ date: dateOrMonth, month: dateOrMonth, balances }),
+      }
+    );
+  },
+
+  deleteWealthSnapshot(scope: AccountScope, dateOrMonth: string) {
+    return requestJson<{ saved: boolean; wealth: WealthPayload }>(
+      `/api/wealth/balances/${encodeURIComponent(dateOrMonth)}?scope=${encodeURIComponent(scope)}`,
+      {
+        method: 'DELETE',
       }
     );
   },
 
   deleteWealthMonth(scope: AccountScope, month: string) {
-    return requestJson<{ saved: boolean; wealth: WealthPayload }>(
-      `/api/wealth/balances/${encodeURIComponent(month)}?scope=${encodeURIComponent(scope)}`,
-      {
-        method: 'DELETE',
-      }
-    );
+    return this.deleteWealthSnapshot(scope, month);
   },
 
   manageWealthAccount(

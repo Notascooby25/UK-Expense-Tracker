@@ -194,6 +194,7 @@ export interface WealthPayload {
   known_assets: string[];
   assets_by_month: Record<string, Record<string, number>>;
   latest_month: string;
+  latest_date?: string;
   latest_balances: Record<string, number>;
   latest_net_worth: number;
   net_worth_delta: number;

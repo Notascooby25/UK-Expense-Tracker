@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.6.4"
+APP_VERSION = "0.6.5"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.6.5",
+        "date": "18 Oct 2026",
+        "title": "Exact Day-Level Wealth & Account Balance Tracking",
+        "changes": [
+            "Upgraded the Wealth Balance Logger from month-only entry to specific date selection (DD/MM/YYYY) with a quick 'Set Today' shortcut.",
+            "Enabled recording multiple balance snapshots within the same month (e.g. 30 Oct and 04 Nov) to track precise account balance changes across short intervals.",
+            "Updated Net Worth progression and asset breakdown charts to display clean, human-readable UK dates on chart axes and inspection tooltips.",
+            "Enhanced the Edit History modal to manage and delete specific date snapshots while keeping full backward compatibility with older monthly records.",
+        ],
+    },
     {
         "version": "0.6.4",
         "date": "12 Oct 2026",
