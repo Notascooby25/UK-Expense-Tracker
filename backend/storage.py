@@ -133,6 +133,7 @@ def resolve_scope_paths(account_scope: str) -> dict[str, str]:
         "settings": os.path.join(data_dir, get_scoped_filename(base_settings, scope)),
         "filters": os.path.join(data_dir, get_scoped_filename(base_filters, scope)),
         "assets": os.path.join(data_dir, get_scoped_filename("assets.json", scope)),
+        "debts": os.path.join(data_dir, get_scoped_filename("debts.json", scope)),
     }
 
 
@@ -286,6 +287,41 @@ def save_assets(scope: str, assets: dict[str, dict[str, float]]) -> None:
     """Atomically save monthly asset balances for the given scope."""
     paths = resolve_scope_paths(scope)
     atomic_write_json(paths["assets"], assets)
+
+
+def load_debts(scope: str) -> dict[str, Any]:
+    """Load loan liabilities and balances for the given scope."""
+    paths = resolve_scope_paths(scope)
+    raw = load_json_file(paths["debts"])
+    if not isinstance(raw, dict):
+        return {"loans": {}, "balances": {}}
+
+    loans: dict[str, dict[str, float]] = {}
+    if isinstance(raw.get("loans"), dict):
+        for l_name, l_meta in raw["loans"].items():
+            if isinstance(l_meta, dict):
+                orig = l_meta.get("original_amount")
+                loans[str(l_name)] = {
+                    "original_amount": round(float(orig), 2) if orig is not None else 0.0
+                }
+
+    balances: dict[str, dict[str, float]] = {}
+    if isinstance(raw.get("balances"), dict):
+        for date_key, b_map in raw["balances"].items():
+            if isinstance(b_map, dict):
+                balances[str(date_key)] = {
+                    str(k): round(float(v), 2)
+                    for k, v in b_map.items()
+                    if v is not None and float(v) >= 0
+                }
+
+    return {"loans": loans, "balances": balances}
+
+
+def save_debts(scope: str, debts: dict[str, Any]) -> None:
+    """Atomically save loan liabilities and balances for the given scope."""
+    paths = resolve_scope_paths(scope)
+    atomic_write_json(paths["debts"], debts)
 
 
 def load_transactions(scope: str) -> pd.DataFrame:

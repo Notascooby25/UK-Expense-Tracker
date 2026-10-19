@@ -54,12 +54,14 @@ from backend.storage import (
     get_matching_auto_rule,
     get_startup_health,
     load_assets,
+    load_debts,
     load_filters,
     load_settings,
     load_transactions,
     normalize_scope,
     parse_and_merge_import,
     save_assets,
+    save_debts,
     save_filters,
     save_settings,
     save_transactions,
@@ -153,13 +155,17 @@ class IntelligenceActionRequest(BaseModel):
 class WealthBalanceSaveRequest(BaseModel):
     date: str = ""
     month: str = ""
-    balances: dict[str, float]
+    balances: dict[str, float] | None = None
+    asset_balances: dict[str, float] | None = None
+    debt_balances: dict[str, float] | None = None
+    loans_metadata: dict[str, dict[str, float]] | None = None
 
 
 class WealthAccountManageRequest(BaseModel):
     action: str  # "delete" or "rename"
     account: str
     new_name: str | None = None
+    account_type: str = "asset"  # "asset" or "debt"
 
 
 class TestRuleRequest(BaseModel):
@@ -822,7 +828,10 @@ def get_wealth(
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
     assets_data = load_assets(norm_scope)
-    return build_wealth_data(df, assets_data, ignore_legacy=ignore_legacy, timeframe=timeframe)
+    debts_data = load_debts(norm_scope)
+    return build_wealth_data(
+        df, assets_data, debts_data, ignore_legacy=ignore_legacy, timeframe=timeframe
+    )
 
 
 @app.post("/api/wealth/balances")
@@ -837,24 +846,53 @@ def save_wealth_balances(
         raise HTTPException(
             status_code=400, detail="Snapshot date (YYYY-MM-DD) or month (YYYY-MM) is required."
         )
+
     assets_data = load_assets(norm_scope)
-    cleaned_balances = {
-        clean_string(k): round(float(v), 2)
-        for k, v in payload.balances.items()
-        if clean_string(k) and v is not None and float(v) > 0
-    }
-    if cleaned_balances:
-        assets_data[snapshot_key] = cleaned_balances
-    else:
-        assets_data.pop(snapshot_key, None)
-    save_assets(norm_scope, assets_data)
+    debts_data = load_debts(norm_scope)
+
+    raw_assets = payload.asset_balances if payload.asset_balances is not None else payload.balances
+    if raw_assets is not None:
+        cleaned_assets = {
+            clean_string(k): round(float(v), 2)
+            for k, v in raw_assets.items()
+            if clean_string(k) and v is not None and float(v) > 0
+        }
+        if cleaned_assets:
+            assets_data[snapshot_key] = cleaned_assets
+        else:
+            assets_data.pop(snapshot_key, None)
+        save_assets(norm_scope, assets_data)
+
+    if payload.debt_balances is not None:
+        cleaned_debts = {
+            clean_string(k): round(float(v), 2)
+            for k, v in payload.debt_balances.items()
+            if clean_string(k) and v is not None and float(v) >= 0
+        }
+        if cleaned_debts:
+            debts_data.setdefault("balances", {})[snapshot_key] = cleaned_debts
+        else:
+            debts_data.setdefault("balances", {}).pop(snapshot_key, None)
+
+        if payload.loans_metadata:
+            for l_name, l_meta in payload.loans_metadata.items():
+                cl_name = clean_string(l_name)
+                if cl_name and isinstance(l_meta, dict):
+                    orig = l_meta.get("original_amount")
+                    if orig is not None and float(orig) > 0:
+                        debts_data.setdefault("loans", {})[cl_name] = {
+                            "original_amount": round(float(orig), 2)
+                        }
+        save_debts(norm_scope, debts_data)
+
     df = load_transactions(norm_scope)
-    return {"saved": True, "wealth": build_wealth_data(df, assets_data)}
+    return {"saved": True, "wealth": build_wealth_data(df, assets_data, debts_data)}
 
 
 @app.delete("/api/wealth/balances/{month}")
 def delete_wealth_month(
     month: str,
+    target: str = Query("all"),
     scope: str = Query("Personal"),
     _user: str = Depends(require_auth),
 ) -> dict[str, Any]:
@@ -862,11 +900,20 @@ def delete_wealth_month(
     snapshot_key = clean_string(month)
     if not snapshot_key:
         raise HTTPException(status_code=400, detail="Snapshot date or month is required.")
+
     assets_data = load_assets(norm_scope)
-    assets_data.pop(snapshot_key, None)
-    save_assets(norm_scope, assets_data)
+    debts_data = load_debts(norm_scope)
+
+    if target in ("assets", "all"):
+        assets_data.pop(snapshot_key, None)
+        save_assets(norm_scope, assets_data)
+
+    if target in ("debts", "all"):
+        debts_data.setdefault("balances", {}).pop(snapshot_key, None)
+        save_debts(norm_scope, debts_data)
+
     df = load_transactions(norm_scope)
-    return {"saved": True, "wealth": build_wealth_data(df, assets_data)}
+    return {"saved": True, "wealth": build_wealth_data(df, assets_data, debts_data)}
 
 
 @app.post("/api/wealth/accounts")
@@ -879,33 +926,60 @@ def manage_wealth_account(
     target_account = clean_string(payload.account)
     if not target_account:
         raise HTTPException(status_code=400, detail="Account name is required.")
+
     assets_data = load_assets(norm_scope)
+    debts_data = load_debts(norm_scope)
 
-    if payload.action == "delete":
-        empty_months: list[str] = []
-        for m_key, m_map in assets_data.items():
-            if isinstance(m_map, dict):
-                m_map.pop(target_account, None)
-                if not m_map:
-                    empty_months.append(m_key)
-        for m_key in empty_months:
-            assets_data.pop(m_key, None)
-
-    elif payload.action == "rename":
-        new_name = clean_string(payload.new_name or "")
-        if not new_name:
-            raise HTTPException(status_code=400, detail="New account name is required.")
-        if new_name != target_account:
-            for _, m_map in assets_data.items():
-                if isinstance(m_map, dict) and target_account in m_map:
-                    val = float(m_map.pop(target_account))
-                    m_map[new_name] = round(float(m_map.get(new_name, 0.0)) + val, 2)
+    if payload.account_type == "debt":
+        if payload.action == "delete":
+            debts_data.setdefault("loans", {}).pop(target_account, None)
+            for m_map in debts_data.get("balances", {}).values():
+                if isinstance(m_map, dict):
+                    m_map.pop(target_account, None)
+        elif payload.action == "rename":
+            new_name = clean_string(payload.new_name or "")
+            if not new_name:
+                raise HTTPException(status_code=400, detail="New account name is required.")
+            if new_name != target_account:
+                if target_account in debts_data.get("loans", {}):
+                    debts_data["loans"][new_name] = debts_data["loans"].pop(target_account)
+                for m_map in debts_data.get("balances", {}).values():
+                    if isinstance(m_map, dict) and target_account in m_map:
+                        debts_data_val = float(m_map.pop(target_account))
+                        m_map[new_name] = round(float(m_map.get(new_name, 0.0)) + debts_data_val, 2)
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported account action: {payload.action}"
+            )
+        save_debts(norm_scope, debts_data)
     else:
-        raise HTTPException(status_code=400, detail=f"Unsupported account action: {payload.action}")
+        if payload.action == "delete":
+            empty_months: list[str] = []
+            for m_key, m_map in assets_data.items():
+                if isinstance(m_map, dict):
+                    m_map.pop(target_account, None)
+                    if not m_map:
+                        empty_months.append(m_key)
+            for m_key in empty_months:
+                assets_data.pop(m_key, None)
 
-    save_assets(norm_scope, assets_data)
+        elif payload.action == "rename":
+            new_name = clean_string(payload.new_name or "")
+            if not new_name:
+                raise HTTPException(status_code=400, detail="New account name is required.")
+            if new_name != target_account:
+                for _, m_map in assets_data.items():
+                    if isinstance(m_map, dict) and target_account in m_map:
+                        val = float(m_map.pop(target_account))
+                        m_map[new_name] = round(float(m_map.get(new_name, 0.0)) + val, 2)
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported account action: {payload.action}"
+            )
+        save_assets(norm_scope, assets_data)
+
     df = load_transactions(norm_scope)
-    return {"saved": True, "wealth": build_wealth_data(df, assets_data)}
+    return {"saved": True, "wealth": build_wealth_data(df, assets_data, debts_data)}
 
 
 # --- Settings & Filter Presets Endpoints ---

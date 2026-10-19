@@ -13,6 +13,7 @@ import {
   Pencil,
   Trash2,
   X,
+  Landmark,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -81,6 +82,10 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
   const [selectedDate, setSelectedDate] = useState<string>(getTodayDateStr);
   const [assetBalances, setAssetBalances] = useState<Record<string, number | ''>>({});
   const [newAssetName, setNewAssetName] = useState('');
+  const [debtBalances, setDebtBalances] = useState<Record<string, number | ''>>({});
+  const [newDebtName, setNewDebtName] = useState('');
+  const [newDebtOriginalAmount, setNewDebtOriginalAmount] = useState<number | ''>('');
+  const [loansMetadata, setLoansMetadata] = useState<Record<string, { original_amount: number }>>({});
 
   // Edit History & Manage Accounts Popup Modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -88,7 +93,11 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
   const [modalMonthEdits, setModalMonthEdits] = useState<
     Record<string, Record<string, number | ''>>
   >({});
+  const [modalDebtEdits, setModalDebtEdits] = useState<
+    Record<string, Record<string, number | ''>>
+  >({});
   const [renameDrafts, setRenameDrafts] = useState<Record<string, string>>({});
+  const [renameDebtDrafts, setRenameDebtDrafts] = useState<Record<string, string>>({});
   const [modalSaving, setModalSaving] = useState(false);
 
   const syncModalStateFromWealth = useCallback((wealth: WealthPayload) => {
@@ -111,6 +120,34 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
       nextRenames[a] = a;
     });
     setRenameDrafts(nextRenames);
+
+    const nextDebtEdits: Record<string, Record<string, number | ''>> = {};
+    const allKnownDebts = wealth.known_debts || [];
+    Object.entries(wealth.debts_by_month || {}).forEach(([m, balances]) => {
+      const row: Record<string, number | ''> = {};
+      allKnownDebts.forEach((d) => {
+        row[d] = balances[d] !== undefined ? balances[d] : '';
+      });
+      Object.entries(balances).forEach(([d, val]) => {
+        row[d] = val;
+      });
+      nextDebtEdits[m] = row;
+    });
+    setModalDebtEdits(nextDebtEdits);
+
+    const nextDebtRenames: Record<string, string> = {};
+    allKnownDebts.forEach((d) => {
+      nextDebtRenames[d] = d;
+    });
+    setRenameDebtDrafts(nextDebtRenames);
+
+    if (wealth.loans_summary) {
+      const meta: Record<string, { original_amount: number }> = {};
+      wealth.loans_summary.forEach((ls) => {
+        meta[ls.name] = { original_amount: ls.original_amount };
+      });
+      setLoansMetadata(meta);
+    }
   }, []);
 
   const applyUpdatedWealth = useCallback(
@@ -128,6 +165,19 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
         });
         setAssetBalances(blank);
       }
+
+      if (wealth.debts_by_month && wealth.debts_by_month[selectedDate]) {
+        setDebtBalances(wealth.debts_by_month[selectedDate]);
+      } else if (wealth.latest_debts && Object.keys(wealth.latest_debts).length > 0) {
+        setDebtBalances(wealth.latest_debts);
+      } else {
+        const blankD: Record<string, number | ''> = {};
+        (wealth.known_debts || []).forEach((d) => {
+          blankD[d] = '';
+        });
+        setDebtBalances(blankD);
+      }
+
       setStatusMsg(message);
       setTimeout(() => setStatusMsg((cur) => (cur === message ? null : cur)), 3000);
     },
@@ -146,8 +196,13 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
       if (res.assets_by_month && res.assets_by_month[selectedDate]) {
         setAssetBalances(res.assets_by_month[selectedDate]);
       } else if (res.latest_balances) {
-        // Fallback to latest balances as baseline
         setAssetBalances(res.latest_balances);
+      }
+
+      if (res.debts_by_month && res.debts_by_month[selectedDate]) {
+        setDebtBalances(res.debts_by_month[selectedDate]);
+      } else if (res.latest_debts) {
+        setDebtBalances(res.latest_debts);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load wealth data');
@@ -178,12 +233,21 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     if (data?.assets_by_month && data.assets_by_month[date]) {
       setAssetBalances(data.assets_by_month[date]);
     } else {
-      // Keep keys with empty or latest baseline
       const blank: Record<string, number | ''> = {};
       (data?.known_assets || []).forEach((asset) => {
         blank[asset] = data?.latest_balances?.[asset] ?? '';
       });
       setAssetBalances(blank);
+    }
+
+    if (data?.debts_by_month && data.debts_by_month[date]) {
+      setDebtBalances(data.debts_by_month[date]);
+    } else {
+      const blankD: Record<string, number | ''> = {};
+      (data?.known_debts || []).forEach((debt) => {
+        blankD[debt] = data?.latest_debts?.[debt] ?? '';
+      });
+      setDebtBalances(blankD);
     }
   };
 
@@ -195,6 +259,14 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     }));
   };
 
+  const handleDebtBalanceChange = (debt: string, valStr: string) => {
+    const val = valStr === '' ? '' : parseFloat(valStr);
+    setDebtBalances((prev) => ({
+      ...prev,
+      [debt]: isNaN(val as number) ? '' : val,
+    }));
+  };
+
   const handleClearOrRemoveAssetRow = (asset: string) => {
     setAssetBalances((prev) => {
       const next = { ...prev };
@@ -202,6 +274,18 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
         next[asset] = '';
       } else {
         delete next[asset];
+      }
+      return next;
+    });
+  };
+
+  const handleClearOrRemoveDebtRow = (debt: string) => {
+    setDebtBalances((prev) => {
+      const next = { ...prev };
+      if (data?.known_debts?.includes(debt)) {
+        next[debt] = '';
+      } else {
+        delete next[debt];
       }
       return next;
     });
@@ -218,26 +302,58 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     setNewAssetName('');
   };
 
+  const handleAddNewDebt = () => {
+    const trimmed = newDebtName.trim();
+    if (!trimmed) return;
+    if (debtBalances[trimmed] !== undefined) {
+      alert(`Loan/debt "${trimmed}" already exists.`);
+      return;
+    }
+    setDebtBalances((prev) => ({ ...prev, [trimmed]: '' }));
+    if (typeof newDebtOriginalAmount === 'number' && newDebtOriginalAmount > 0) {
+      setLoansMetadata((prev) => ({
+        ...prev,
+        [trimmed]: { original_amount: newDebtOriginalAmount },
+      }));
+    }
+    setNewDebtName('');
+    setNewDebtOriginalAmount('');
+  };
+
   const handleSaveBalances = async () => {
     try {
-      // Filter out non-numeric values
-      const numericPayload: Record<string, number> = {};
+      const numericAssetPayload: Record<string, number> = {};
       Object.entries(assetBalances).forEach(([asset, val]) => {
         if (typeof val === 'number' && val > 0) {
-          numericPayload[asset] = val;
+          numericAssetPayload[asset] = val;
         } else if (typeof val === 'string' && val.trim() !== '') {
           const num = parseFloat(val);
-          if (!isNaN(num) && num > 0) numericPayload[asset] = num;
+          if (!isNaN(num) && num > 0) numericAssetPayload[asset] = num;
         }
       });
 
-      const res = await api.saveWealthBalances(scope, selectedDate, numericPayload);
+      const numericDebtPayload: Record<string, number> = {};
+      Object.entries(debtBalances).forEach(([debt, val]) => {
+        if (typeof val === 'number' && val >= 0) {
+          numericDebtPayload[debt] = val;
+        } else if (typeof val === 'string' && val.trim() !== '') {
+          const num = parseFloat(val);
+          if (!isNaN(num) && num >= 0) numericDebtPayload[debt] = num;
+        }
+      });
+
+      const res = await api.saveWealthBalances(scope, {
+        date: selectedDate,
+        asset_balances: numericAssetPayload,
+        debt_balances: numericDebtPayload,
+        loans_metadata: loansMetadata,
+      });
       applyUpdatedWealth(
         res.wealth,
         `Balances for ${formatSnapshotLabel(selectedDate) || selectedDate} saved!`
       );
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to save asset balances');
+      alert(err instanceof Error ? err.message : 'Failed to save balances');
     }
   };
 
@@ -252,21 +368,48 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     }));
   };
 
+  const handleModalDebtBalanceChange = (month: string, debt: string, valStr: string) => {
+    const val = valStr === '' ? '' : parseFloat(valStr);
+    setModalDebtEdits((prev) => ({
+      ...prev,
+      [month]: {
+        ...(prev[month] || {}),
+        [debt]: isNaN(val as number) ? '' : val,
+      },
+    }));
+  };
+
   const handleSaveModalMonth = async (month: string) => {
     setModalSaving(true);
     try {
-      const monthRow = modalMonthEdits[month] || {};
-      const numericPayload: Record<string, number> = {};
-      Object.entries(monthRow).forEach(([asset, val]) => {
+      const monthAssetRow = modalMonthEdits[month] || {};
+      const numericAssets: Record<string, number> = {};
+      Object.entries(monthAssetRow).forEach(([asset, val]) => {
         if (typeof val === 'number' && val > 0) {
-          numericPayload[asset] = val;
+          numericAssets[asset] = val;
         } else if (typeof val === 'string' && val.trim() !== '') {
           const num = parseFloat(val);
-          if (!isNaN(num) && num > 0) numericPayload[asset] = num;
+          if (!isNaN(num) && num > 0) numericAssets[asset] = num;
         }
       });
-      const res = await api.saveWealthBalances(scope, month, numericPayload);
-      applyUpdatedWealth(res.wealth, `Updated ${month} balances`);
+
+      const monthDebtRow = modalDebtEdits[month] || {};
+      const numericDebts: Record<string, number> = {};
+      Object.entries(monthDebtRow).forEach(([debt, val]) => {
+        if (typeof val === 'number' && val >= 0) {
+          numericDebts[debt] = val;
+        } else if (typeof val === 'string' && val.trim() !== '') {
+          const num = parseFloat(val);
+          if (!isNaN(num) && num >= 0) numericDebts[debt] = num;
+        }
+      });
+
+      const res = await api.saveWealthBalances(scope, {
+        date: month,
+        asset_balances: numericAssets,
+        debt_balances: numericDebts,
+      });
+      applyUpdatedWealth(res.wealth, `Updated ${formatSnapshotLabel(month) || month} balances`);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : `Failed to update ${month}`);
     } finally {
@@ -274,11 +417,11 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     }
   };
 
-  const handleDeleteMonth = async (month: string) => {
+  const handleDeleteMonth = async (month: string, target: 'assets' | 'debts' | 'all' = 'all') => {
     setModalSaving(true);
     try {
-      const res = await api.deleteWealthMonth(scope, month);
-      applyUpdatedWealth(res.wealth, `Deleted ${month} snapshot`);
+      const res = await api.deleteWealthMonth(scope, month, target);
+      applyUpdatedWealth(res.wealth, `Deleted ${formatSnapshotLabel(month) || month} snapshot`);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : `Failed to delete ${month}`);
     } finally {
@@ -286,19 +429,28 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     }
   };
 
-  const handleDeleteAccountEverywhere = async (account: string) => {
+  const handleDeleteAccountEverywhere = async (account: string, account_type: 'asset' | 'debt' = 'asset') => {
     setModalSaving(true);
     try {
-      setAssetBalances((prev) => {
-        const next = { ...prev };
-        delete next[account];
-        return next;
-      });
+      if (account_type === 'debt') {
+        setDebtBalances((prev) => {
+          const next = { ...prev };
+          delete next[account];
+          return next;
+        });
+      } else {
+        setAssetBalances((prev) => {
+          const next = { ...prev };
+          delete next[account];
+          return next;
+        });
+      }
       const res = await api.manageWealthAccount(scope, {
         action: 'delete',
         account,
+        account_type,
       });
-      applyUpdatedWealth(res.wealth, `Deleted account "${account}"`);
+      applyUpdatedWealth(res.wealth, `Deleted ${account_type} "${account}"`);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : `Failed to delete account "${account}"`);
     } finally {
@@ -306,8 +458,9 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     }
   };
 
-  const handleRenameAccountEverywhere = async (account: string) => {
-    const newName = (renameDrafts[account] || '').trim();
+  const handleRenameAccountEverywhere = async (account: string, account_type: 'asset' | 'debt' = 'asset') => {
+    const drafts = account_type === 'debt' ? renameDebtDrafts : renameDrafts;
+    const newName = (drafts[account] || '').trim();
     if (!newName || newName === account) return;
     setModalSaving(true);
     try {
@@ -315,6 +468,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
         action: 'rename',
         account,
         new_name: newName,
+        account_type,
       });
       applyUpdatedWealth(res.wealth, `Renamed "${account}" to "${newName}"`);
     } catch (err: unknown) {
@@ -327,6 +481,25 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
   const currentAssets = Array.from(
     new Set([...(data?.known_assets || []), ...Object.keys(assetBalances)])
   ).sort();
+
+  const currentDebts = Array.from(
+    new Set([...(data?.known_debts || []), ...Object.keys(debtBalances)])
+  ).sort();
+
+  const allRecordedDates = Array.from(
+    new Set([
+      ...Object.keys(data?.assets_by_month || {}),
+      ...Object.keys(data?.debts_by_month || {}),
+    ])
+  ).sort((a, b) => b.localeCompare(a));
+
+  const hasDebts =
+    (data?.latest_debts_total || 0) > 0 ||
+    (data?.loans_summary && data.loans_summary.length > 0) ||
+    currentDebts.length > 0;
+
+  const primaryLoan = data?.loans_summary?.[0];
+
 
   const recordedMonthsDesc = Object.keys(data?.assets_by_month || {}).sort((a, b) =>
     b.localeCompare(a)
@@ -390,16 +563,52 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
       )}
 
       {/* Net Worth Headline KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-1 ${hasDebts ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'} gap-4`}>
         <div className="bg-[#1b262c] border border-slate-700/50 rounded-lg p-4">
           <div className="text-xs text-slate-400 font-medium">Total Net Worth</div>
           <div className="text-2xl font-bold text-slate-100 font-mono mt-1">
             £{(data?.latest_net_worth || 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Recorded balance as of <span className="font-semibold text-slate-300">{data?.latest_month || 'Latest'}</span>
-          </div>
+          {hasDebts ? (
+            <div className="text-[11px] text-slate-400 mt-1">
+              Total Assets: <span className="text-slate-300 font-semibold">£{(data?.latest_assets_total || 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+              {' − '}
+              Debt: <span className="text-rose-400 font-semibold">£{(data?.latest_debts_total || 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-400 mt-1">
+              Recorded balance as of <span className="font-semibold text-slate-300">{data?.latest_month || 'Latest'}</span>
+            </div>
+          )}
         </div>
+
+        {hasDebts && (
+          <div className="bg-[#1b262c] border border-slate-700/50 rounded-lg p-4 flex flex-col justify-between">
+            <div>
+              <div className="text-xs text-slate-400 font-medium flex items-center justify-between">
+                <span>{primaryLoan ? primaryLoan.name : 'Outstanding Loan'}</span>
+                <span className="text-[10px] text-rose-400 uppercase tracking-wider font-semibold">Liability</span>
+              </div>
+              <div className="text-2xl font-bold font-mono mt-1 text-rose-400">
+                £{(data?.latest_debts_total || 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+              </div>
+            </div>
+            {primaryLoan && (
+              <div className="pt-2">
+                <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-rose-500 to-amber-400 h-1.5 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(0, primaryLoan.pct_repaid))}%` }}
+                  />
+                </div>
+                <div className="text-[11px] text-slate-400 mt-1.5 flex items-center justify-between font-mono">
+                  <span>Original: £{primaryLoan.original_amount.toLocaleString('en-GB')}</span>
+                  <span>Repaid: £{primaryLoan.repaid_amount.toLocaleString('en-GB')} ({primaryLoan.pct_repaid}%)</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="bg-[#1b262c] border border-slate-700/50 rounded-lg p-4">
           <div className="text-xs text-slate-400 font-medium">Monthly Change</div>
@@ -425,7 +634,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
           <div>
             <div className="text-xs text-slate-400 font-medium">Accounts Tracked</div>
             <div className="text-2xl font-bold text-slate-100 font-mono mt-1">
-              {currentAssets.length}
+              {currentAssets.length + currentDebts.length}
             </div>
           </div>
           <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer pt-2 border-t border-slate-800">
@@ -496,7 +705,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
               Account Balances (£)
             </div>
 
-            <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
               {currentAssets.length === 0 ? (
                 <div className="text-xs text-slate-500 py-4 text-center">
                   No assets configured yet. Add your first account below.
@@ -547,6 +756,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                 className="flex-1 px-2.5 py-1.5 text-xs bg-[#263238] border border-slate-700 rounded-md text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
               />
               <button
+                type="button"
                 onClick={handleAddNewAsset}
                 disabled={!newAssetName.trim()}
                 className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md border border-slate-700 flex items-center gap-1 disabled:opacity-40 transition-colors"
@@ -554,6 +764,87 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add</span>
               </button>
+            </div>
+          </div>
+
+          {/* Debt & Loan Inputs */}
+          <div className="space-y-3 pt-3 border-t border-slate-700/50">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Landmark className="w-3.5 h-3.5 text-rose-400" />
+                <span>Loans & Liabilities (£)</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-mono">Deducted from Net Worth</span>
+            </div>
+
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              {currentDebts.length === 0 ? (
+                <div className="text-xs text-slate-500 py-2 text-center">
+                  No active loans or debts. Add one below if you hold debt.
+                </div>
+              ) : (
+                currentDebts.map((debt) => (
+                  <div key={debt} className="flex items-center gap-2">
+                    <span className="text-xs text-rose-300/90 font-medium w-36 truncate" title={debt}>
+                      {debt}
+                    </span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-rose-400/60 font-mono text-xs">
+                        £
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={debtBalances[debt] ?? ''}
+                        onChange={(e) => handleDebtBalanceChange(debt, e.target.value)}
+                        className="w-full pl-6 pr-2.5 py-1.5 text-xs bg-[#263238] border border-rose-900/50 rounded-md text-rose-200 font-mono focus:outline-none focus:border-rose-500"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleClearOrRemoveDebtRow(debt)}
+                      className="p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                      title={`Clear ${debt} for ${formatSnapshotLabel(selectedDate) || selectedDate}`}
+                      aria-label={`Clear ${debt} for ${formatSnapshotLabel(selectedDate) || selectedDate}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Add New Loan Input */}
+            <div className="space-y-2 pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="New loan name (e.g. Monzo Loan)"
+                  value={newDebtName}
+                  onChange={(e) => setNewDebtName(e.target.value)}
+                  className="flex-1 px-2.5 py-1.5 text-xs bg-[#263238] border border-slate-700 rounded-md text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Original £"
+                  value={newDebtOriginalAmount}
+                  onChange={(e) =>
+                    setNewDebtOriginalAmount(e.target.value === '' ? '' : parseFloat(e.target.value))
+                  }
+                  className="w-28 px-2.5 py-1.5 text-xs bg-[#263238] border border-slate-700 rounded-md text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-rose-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddNewDebt}
+                  disabled={!newDebtName.trim()}
+                  className="px-3 py-1.5 text-xs font-medium bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 rounded-md border border-rose-800/60 flex items-center gap-1 disabled:opacity-40 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Loan</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -616,7 +907,16 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                         color: '#f8fafc',
                       }}
                       labelFormatter={(label) => formatSnapshotLabel(String(label))}
-                      formatter={(val: number) => [`£${val.toLocaleString()}`, 'Net Worth']}
+                      formatter={(val: number, _name: string, item: { payload?: { assets?: number; debts?: number } }) => {
+                        const p = item?.payload;
+                        if (p && p.debts !== undefined && p.debts > 0) {
+                          return [
+                            `£${val.toLocaleString('en-GB', { minimumFractionDigits: 2 })} (Assets: £${(p.assets || 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })} − Debt: £${(p.debts || 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })})`,
+                            'Net Worth',
+                          ];
+                        }
+                        return [`£${val.toLocaleString('en-GB', { minimumFractionDigits: 2 })}`, 'Net Worth'];
+                      }}
                     />
                     <Area
                       type="monotone"
@@ -795,7 +1095,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Recorded Snapshots ({recordedMonthsDesc.length})
+                Recorded Snapshots ({allRecordedDates.length})
               </button>
               <button
                 type="button"
@@ -806,27 +1106,36 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Manage Accounts ({currentAssets.length})
+                Manage Accounts ({currentAssets.length + currentDebts.length})
               </button>
             </div>
 
             {/* Modal Scrollable Body */}
             <div className="p-5 overflow-y-auto space-y-4 flex-1">
               {modalTab === 'months' ? (
-                recordedMonthsDesc.length === 0 ? (
+                allRecordedDates.length === 0 ? (
                   <div className="py-12 text-center text-xs text-slate-400">
                     No snapshots saved yet. Use the Wealth Balance Logger to record your first snapshot.
                   </div>
                 ) : (
-                  recordedMonthsDesc.map((month) => {
-                    const monthRow = modalMonthEdits[month] || {};
+                  allRecordedDates.map((month) => {
+                    const monthAssetRow = modalMonthEdits[month] || {};
+                    const monthDebtRow = modalDebtEdits[month] || {};
                     const monthAssets = Array.from(
-                      new Set([...currentAssets, ...Object.keys(monthRow)])
+                      new Set([...currentAssets, ...Object.keys(monthAssetRow)])
                     ).sort();
-                    const monthTotal = Object.values(monthRow).reduce<number>((acc, v) => {
+                    const monthDebts = Array.from(
+                      new Set([...currentDebts, ...Object.keys(monthDebtRow)])
+                    ).sort();
+                    const monthAssetsTotal = Object.values(monthAssetRow).reduce<number>((acc, v) => {
                       const num = typeof v === 'number' ? v : parseFloat(String(v));
                       return acc + (!isNaN(num) && num > 0 ? num : 0);
                     }, 0);
+                    const monthDebtsTotal = Object.values(monthDebtRow).reduce<number>((acc, v) => {
+                      const num = typeof v === 'number' ? v : parseFloat(String(v));
+                      return acc + (!isNaN(num) && num > 0 ? num : 0);
+                    }, 0);
+                    const monthNetWorth = monthAssetsTotal - monthDebtsTotal;
 
                     return (
                       <div
@@ -834,7 +1143,7 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                         className="p-4 rounded-lg bg-[#222f36] border border-slate-700/70 space-y-3"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-700/60">
-                          <div className="flex items-center gap-2.5">
+                          <div className="flex flex-wrap items-center gap-2.5">
                             <span
                               className="px-2.5 py-0.5 rounded bg-[#1b262c] border border-slate-700 font-mono text-xs font-bold text-emerald-400"
                               title={month}
@@ -842,10 +1151,15 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                               {formatSnapshotLabel(month)}
                             </span>
                             <span className="text-xs text-slate-300 font-mono">
-                              Total:{' '}
+                              Net Worth:{' '}
                               <strong className="text-white">
-                                £{monthTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                                £{monthNetWorth.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
                               </strong>
+                              {monthDebtsTotal > 0 && (
+                                <span className="text-slate-400 text-[11px] ml-1.5">
+                                  (Assets: £{monthAssetsTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })} − Debt: £{monthDebtsTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })})
+                                </span>
+                              )}
                             </span>
                           </div>
 
@@ -857,115 +1171,229 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-medium transition-colors"
                             >
                               <Save className="w-3.5 h-3.5" />
-                              <span>Save {formatSnapshotLabel(month)}</span>
+                              <span>Save</span>
                             </button>
                             <button
                               type="button"
                               disabled={modalSaving}
-                              onClick={() => handleDeleteMonth(month)}
+                              onClick={() => handleDeleteMonth(month, 'all')}
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 disabled:opacity-50 text-red-200 text-xs font-medium transition-colors"
                               title={`Delete snapshot for ${formatSnapshotLabel(month)}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete Snapshot</span>
+                              <span>Delete</span>
                             </button>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          {monthAssets.map((asset) => (
-                            <div
-                              key={`${month}-${asset}`}
-                              className="flex items-center gap-2 bg-[#1b262c] border border-slate-700/60 rounded-md px-2.5 py-1.5"
-                            >
-                              <span
-                                className="text-xs text-slate-300 font-medium w-28 truncate"
-                                title={asset}
+                        {/* Assets subgrid */}
+                        <div className="space-y-1.5">
+                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                            Asset Accounts
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {monthAssets.map((asset) => (
+                              <div
+                                key={`${month}-${asset}`}
+                                className="flex items-center gap-2 bg-[#1b262c] border border-slate-700/60 rounded-md px-2.5 py-1"
                               >
-                                {asset}
-                              </span>
-                              <div className="relative flex-1">
-                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">
-                                  £
+                                <span
+                                  className="text-xs text-slate-300 font-medium w-28 truncate"
+                                  title={asset}
+                                >
+                                  {asset}
                                 </span>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="0.00"
-                                  value={monthRow[asset] ?? ''}
-                                  onChange={(e) =>
-                                    handleModalBalanceChange(month, asset, e.target.value)
-                                  }
-                                  className="w-full pl-5 pr-2 py-1 text-xs bg-[#263238] border border-slate-700 rounded text-slate-100 font-mono focus:outline-none focus:border-cyan-500"
-                                />
+                                <div className="relative flex-1">
+                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs">
+                                    £
+                                  </span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={monthAssetRow[asset] ?? ''}
+                                    onChange={(e) =>
+                                      handleModalBalanceChange(month, asset, e.target.value)
+                                    }
+                                    className="w-full pl-5 pr-2 py-1 text-xs bg-[#263238] border border-slate-700 rounded text-slate-100 font-mono focus:outline-none focus:border-cyan-500"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleModalBalanceChange(month, asset, '')}
+                                  className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                                  title={`Clear ${asset} in ${month}`}
+                                  aria-label={`Clear ${asset} in ${month}`}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleModalBalanceChange(month, asset, '')}
-                                className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
-                                title={`Clear ${asset} in ${month}`}
-                                aria-label={`Clear ${asset} in ${month}`}
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
+
+                        {/* Debts subgrid if debts exist */}
+                        {monthDebts.length > 0 && (
+                          <div className="space-y-1.5 pt-2 border-t border-slate-800">
+                            <div className="text-[11px] font-semibold text-rose-300/80 uppercase tracking-wider">
+                              Loans & Debts
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {monthDebts.map((debt) => (
+                                <div
+                                  key={`${month}-${debt}`}
+                                  className="flex items-center gap-2 bg-[#1b262c] border border-rose-900/40 rounded-md px-2.5 py-1"
+                                >
+                                  <span
+                                    className="text-xs text-rose-300 font-medium w-28 truncate"
+                                    title={debt}
+                                  >
+                                    {debt}
+                                  </span>
+                                  <div className="relative flex-1">
+                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-rose-400/60 font-mono text-xs">
+                                      £
+                                    </span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      placeholder="0.00"
+                                      value={monthDebtRow[debt] ?? ''}
+                                      onChange={(e) =>
+                                        handleModalDebtBalanceChange(month, debt, e.target.value)
+                                      }
+                                      className="w-full pl-5 pr-2 py-1 text-xs bg-[#263238] border border-slate-700 rounded text-rose-200 font-mono focus:outline-none focus:border-rose-500"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleModalDebtBalanceChange(month, debt, '')}
+                                    className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                                    title={`Clear ${debt} in ${month}`}
+                                    aria-label={`Clear ${debt} in ${month}`}
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })
                 )
-              ) : currentAssets.length === 0 ? (
+              ) : currentAssets.length === 0 && currentDebts.length === 0 ? (
                 <div className="py-12 text-center text-xs text-slate-400">
                   No accounts tracked yet.
                 </div>
               ) : (
-                <div className="space-y-2.5">
+                <div className="space-y-5">
                   <p className="text-xs text-slate-400">
                     Rename an account to fix a typo across all saved months, or delete an account to remove it from every recorded snapshot.
                   </p>
-                  {currentAssets.map((account) => {
-                    const draftVal = renameDrafts[account] ?? account;
-                    const isChanged = draftVal.trim() !== '' && draftVal.trim() !== account;
-                    return (
-                      <div
-                        key={account}
-                        className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 p-3 rounded-lg bg-[#222f36] border border-slate-700/70"
-                      >
-                        <input
-                          type="text"
-                          value={draftVal}
-                          onChange={(e) =>
-                            setRenameDrafts((prev) => ({
-                              ...prev,
-                              [account]: e.target.value,
-                            }))
-                          }
-                          className="flex-1 min-w-[180px] px-2.5 py-1.5 text-xs bg-[#1b262c] border border-slate-700 rounded text-slate-100 focus:outline-none focus:border-cyan-500"
-                          aria-label={`Account name for ${account}`}
-                        />
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={!isChanged || modalSaving}
-                            onClick={() => handleRenameAccountEverywhere(account)}
-                            className="px-2.5 py-1.5 rounded bg-cyan-700 hover:bg-cyan-600 disabled:opacity-40 text-white text-xs font-medium transition-colors"
-                          >
-                            Rename
-                          </button>
-                          <button
-                            type="button"
-                            disabled={modalSaving}
-                            onClick={() => handleDeleteAccountEverywhere(account)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 disabled:opacity-50 text-red-200 text-xs font-medium transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Delete Account</span>
-                          </button>
+
+                  {/* Asset Accounts */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Wallet className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Asset Accounts ({currentAssets.length})</span>
+                    </div>
+                    {currentAssets.map((account) => {
+                      const draftVal = renameDrafts[account] ?? account;
+                      const isChanged = draftVal.trim() !== '' && draftVal.trim() !== account;
+                      return (
+                        <div
+                          key={account}
+                          className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 p-3 rounded-lg bg-[#222f36] border border-slate-700/70"
+                        >
+                          <input
+                            type="text"
+                            value={draftVal}
+                            onChange={(e) =>
+                              setRenameDrafts((prev) => ({
+                                ...prev,
+                                [account]: e.target.value,
+                              }))
+                            }
+                            className="flex-1 min-w-[180px] px-2.5 py-1.5 text-xs bg-[#1b262c] border border-slate-700 rounded text-slate-100 focus:outline-none focus:border-cyan-500"
+                            aria-label={`Account name for ${account}`}
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={!isChanged || modalSaving}
+                              onClick={() => handleRenameAccountEverywhere(account, 'asset')}
+                              className="px-2.5 py-1.5 rounded bg-cyan-700 hover:bg-cyan-600 disabled:opacity-40 text-white text-xs font-medium transition-colors"
+                            >
+                              Rename
+                            </button>
+                            <button
+                              type="button"
+                              disabled={modalSaving}
+                              onClick={() => handleDeleteAccountEverywhere(account, 'asset')}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 disabled:opacity-50 text-red-200 text-xs font-medium transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
                         </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Loan & Debt Accounts */}
+                  {currentDebts.length > 0 && (
+                    <div className="space-y-2 pt-3 border-t border-slate-800">
+                      <div className="text-xs font-semibold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Landmark className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Loan & Debt Accounts ({currentDebts.length})</span>
                       </div>
-                    );
-                  })}
+                      {currentDebts.map((debt) => {
+                        const draftVal = renameDebtDrafts[debt] ?? debt;
+                        const isChanged = draftVal.trim() !== '' && draftVal.trim() !== debt;
+                        return (
+                          <div
+                            key={debt}
+                            className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 p-3 rounded-lg bg-[#222f36] border border-rose-900/40"
+                          >
+                            <input
+                              type="text"
+                              value={draftVal}
+                              onChange={(e) =>
+                                setRenameDebtDrafts((prev) => ({
+                                  ...prev,
+                                  [debt]: e.target.value,
+                                }))
+                              }
+                              className="flex-1 min-w-[180px] px-2.5 py-1.5 text-xs bg-[#1b262c] border border-slate-700 rounded text-rose-200 focus:outline-none focus:border-rose-500"
+                              aria-label={`Debt name for ${debt}`}
+                            />
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={!isChanged || modalSaving}
+                                onClick={() => handleRenameAccountEverywhere(debt, 'debt')}
+                                className="px-2.5 py-1.5 rounded bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white text-xs font-medium transition-colors"
+                              >
+                                Rename
+                              </button>
+                              <button
+                                type="button"
+                                disabled={modalSaving}
+                                onClick={() => handleDeleteAccountEverywhere(debt, 'debt')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 disabled:opacity-50 text-red-200 text-xs font-medium transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

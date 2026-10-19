@@ -591,3 +591,41 @@ def test_wealth_day_level_snapshots(api_env):
     w_del = r_del.json()["wealth"]
     assert "2026-10-30" not in w_del["assets_by_month"]
     assert "2026-11-04" in w_del["assets_by_month"]
+
+
+def test_wealth_api_supports_debt_balances_and_summary(api_env):
+    """Verify saving debts, calculating loan progress summary, and targeted deletion."""
+    client = TestClient(app)
+    client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": DUMMY_CRED, "remember_me": False},
+    )
+
+    # 1. Save both asset and debt on date
+    payload = {
+        "date": "2026-10-18",
+        "asset_balances": {"Savings": 10000.0},
+        "debt_balances": {"Monzo Loan": 4850.0},
+        "loans_metadata": {"Monzo Loan": {"original_amount": 5000.0}},
+    }
+    res = client.post("/api/wealth/balances?scope=Personal", json=payload)
+    assert res.status_code == 200
+    data = res.json()["wealth"]
+    assert data["latest_net_worth"] == 5150.0
+    assert data["latest_assets_total"] == 10000.0
+    assert data["latest_debts_total"] == 4850.0
+    assert len(data["loans_summary"]) == 1
+    assert data["loans_summary"][0]["name"] == "Monzo Loan"
+    assert data["loans_summary"][0]["original_amount"] == 5000.0
+    assert data["loans_summary"][0]["repaid_amount"] == 150.0
+    assert data["loans_summary"][0]["pct_repaid"] == 3.0
+
+    # 2. Targeted delete: delete only debts for 2026-10-18, assets must be preserved!
+    del_res = client.delete("/api/wealth/balances/2026-10-18?scope=Personal&target=debts")
+    assert del_res.status_code == 200
+    after_data = del_res.json()["wealth"]
+    assert after_data["latest_assets_total"] == 10000.0
+    assert after_data["latest_debts_total"] == 0.0
+    assert after_data["latest_net_worth"] == 10000.0
+    assert "2026-10-18" in after_data["assets_by_month"]
+    assert "2026-10-18" not in after_data["debts_by_month"]

@@ -4,9 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.6.5"
+APP_VERSION = "0.6.6"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.6.6",
+        "date": "19 Oct 2026",
+        "title": "Loan & Debt Tracking in Wealth & Net Worth",
+        "changes": [
+            "Added dedicated Loan & Liability tracking to the Wealth tab, ensuring debts (such as Monzo personal loans) accurately offset assets for a true Total Net Worth.",
+            "Added a highlighted Outstanding Loan KPI summary box showing total debt, initial principal, repaid amount, and repayment percentage progress.",
+            "Enhanced the Wealth Balance Logger with side-by-side Asset and Loan entry sections and quick-add support for loan/debt accounts.",
+            "Updated the Edit History & Account Management modal with a dedicated 'Loans & Liabilities' tab to rename, delete, or inspect loan snapshots independently from assets.",
+            "Integrated loan liabilities into the Net Worth progression chart timeline with forward-filled balances across snapshots.",
+        ],
+    },
     {
         "version": "0.6.5",
         "date": "18 Oct 2026",

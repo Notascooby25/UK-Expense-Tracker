@@ -338,34 +338,56 @@ export const api = {
 
   saveWealthBalances(
     scope: AccountScope,
-    dateOrMonth: string,
-    balances: Record<string, number>
+    dateOrPayload:
+      | string
+      | {
+          date: string;
+          asset_balances?: Record<string, number>;
+          debt_balances?: Record<string, number>;
+          loans_metadata?: Record<string, { original_amount: number }>;
+          balances?: Record<string, number>;
+        },
+    balances?: Record<string, number>
   ) {
+    let bodyObj: Record<string, unknown>;
+    if (typeof dateOrPayload === 'string') {
+      bodyObj = { date: dateOrPayload, month: dateOrPayload, balances: balances || {} };
+    } else {
+      bodyObj = {
+        month: dateOrPayload.date,
+        ...dateOrPayload,
+      };
+    }
     return requestJson<{ saved: boolean; wealth: WealthPayload }>(
       `/api/wealth/balances?scope=${encodeURIComponent(scope)}`,
       {
         method: 'POST',
-        body: JSON.stringify({ date: dateOrMonth, month: dateOrMonth, balances }),
+        body: JSON.stringify(bodyObj),
       }
     );
   },
 
-  deleteWealthSnapshot(scope: AccountScope, dateOrMonth: string) {
+  deleteWealthSnapshot(scope: AccountScope, dateOrMonth: string, target = 'all') {
     return requestJson<{ saved: boolean; wealth: WealthPayload }>(
-      `/api/wealth/balances/${encodeURIComponent(dateOrMonth)}?scope=${encodeURIComponent(scope)}`,
+      `/api/wealth/balances/${encodeURIComponent(dateOrMonth)}?scope=${encodeURIComponent(scope)}&target=${encodeURIComponent(target)}`,
       {
         method: 'DELETE',
       }
     );
   },
 
-  deleteWealthMonth(scope: AccountScope, month: string) {
-    return this.deleteWealthSnapshot(scope, month);
+  deleteWealthMonth(scope: AccountScope, month: string, target = 'all') {
+    return this.deleteWealthSnapshot(scope, month, target);
   },
 
   manageWealthAccount(
     scope: AccountScope,
-    payload: { action: 'delete' | 'rename'; account: string; new_name?: string }
+    payload: {
+      action: 'delete' | 'rename';
+      account: string;
+      new_name?: string;
+      account_type?: 'asset' | 'debt';
+    }
   ) {
     return requestJson<{ saved: boolean; wealth: WealthPayload }>(
       `/api/wealth/accounts?scope=${encodeURIComponent(scope)}`,

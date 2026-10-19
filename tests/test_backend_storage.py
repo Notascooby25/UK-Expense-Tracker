@@ -11,12 +11,14 @@ from backend.storage import (
     clean_string,
     get_matching_auto_rule,
     load_assets,
+    load_debts,
     load_filters,
     load_settings,
     load_transactions,
     parse_and_merge_import,
     process_monzo_splits,
     save_assets,
+    save_debts,
     save_filters,
     save_settings,
     save_transactions,
@@ -89,6 +91,19 @@ def test_atomic_transactions_and_json_roundtrip(
 
     save_assets("Personal", {"2026-10": {"Cash ISA": 5000.0}})
     assert load_assets("Personal")["2026-10"]["Cash ISA"] == 5000.0
+
+    # Debts round-trip
+    initial_debts = load_debts("Personal")
+    assert initial_debts == {"loans": {}, "balances": {}}
+
+    sample_debts = {
+        "loans": {"Monzo Loan": {"original_amount": 5000.0}},
+        "balances": {"2026-10-18": {"Monzo Loan": 4850.0}},
+    }
+    save_debts("Personal", sample_debts)
+    loaded_debts = load_debts("Personal")
+    assert loaded_debts["loans"]["Monzo Loan"]["original_amount"] == 5000.0
+    assert loaded_debts["balances"]["2026-10-18"]["Monzo Loan"] == 4850.0
 
 
 def test_process_monzo_splits_expands_parent_row():

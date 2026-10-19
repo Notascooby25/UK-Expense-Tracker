@@ -190,15 +190,35 @@ export interface IntelligencePayload {
   }>;
 }
 
+export interface LoanSummary {
+  name: string;
+  original_amount: number;
+  current_balance: number;
+  repaid_amount: number;
+  pct_repaid: number;
+}
+
 export interface WealthPayload {
   known_assets: string[];
+  known_debts?: string[];
   assets_by_month: Record<string, Record<string, number>>;
+  debts_by_month?: Record<string, Record<string, number>>;
   latest_month: string;
   latest_date?: string;
   latest_balances: Record<string, number>;
+  latest_debts?: Record<string, number>;
+  latest_assets_total?: number;
+  latest_debts_total?: number;
   latest_net_worth: number;
   net_worth_delta: number;
-  net_worth_series: Array<{ month: string; total: number }>;
+  loans_summary?: LoanSummary[];
+  net_worth_series: Array<{
+    month: string;
+    date?: string;
+    total: number;
+    assets?: number;
+    debts?: number;
+  }>;
   asset_timeline: Array<Record<string, string | number>>;
   internal_timeline: Array<Record<string, string | number>>;
   internal_transactions: Array<{

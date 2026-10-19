@@ -629,6 +629,7 @@ def build_intelligence_data(df: pd.DataFrame, settings: dict[str, Any]) -> dict[
 def build_wealth_data(
     df: pd.DataFrame,
     assets_data: dict[str, dict[str, float]],
+    debts_data: dict[str, Any] | None = None,
     ignore_legacy: bool = True,
     timeframe: str = "All Time",
 ) -> dict[str, Any]:
@@ -645,25 +646,85 @@ def build_wealth_data(
             known_set.update(month_map.keys())
     known_assets = sorted(known_set) if known_set else default_assets
 
-    sorted_months = sorted(assets_data.keys())
-    latest_balances: dict[str, float] = {}
-    if sorted_months:
-        latest_balances = {k: round(float(v), 2) for k, v in assets_data[sorted_months[-1]].items()}
+    if debts_data is None:
+        debts_data = {"loans": {}, "balances": {}}
 
+    loans_metadata: dict[str, dict[str, float]] = debts_data.get("loans", {})
+    debts_by_date: dict[str, dict[str, float]] = debts_data.get("balances", {})
+
+    known_debts_set: set[str] = set(loans_metadata.keys())
+    for _, b_map in debts_by_date.items():
+        if isinstance(b_map, dict):
+            known_debts_set.update(b_map.keys())
+    known_debts = sorted(known_debts_set)
+
+    all_dates = sorted(set(assets_data.keys()).union(debts_by_date.keys()))
+
+    current_assets: dict[str, float] = {}
+    current_debts: dict[str, float] = {}
     net_worth_series: list[dict[str, Any]] = []
     asset_timeline: list[dict[str, Any]] = []
-    for m in sorted_months:
-        m_data = assets_data.get(m, {})
-        total = round(sum(float(v) for v in m_data.values()), 2)
-        net_worth_series.append({"month": m, "total": total})
-        entry: dict[str, Any] = {"month": m}
+
+    for d in all_dates:
+        if d in assets_data and isinstance(assets_data[d], dict):
+            for k, v in assets_data[d].items():
+                if v is not None:
+                    current_assets[str(k)] = round(float(v), 2)
+        if d in debts_by_date and isinstance(debts_by_date[d], dict):
+            for k, v in debts_by_date[d].items():
+                if v is not None:
+                    current_debts[str(k)] = round(float(v), 2)
+
+        d_assets = round(sum(current_assets.values()), 2)
+        d_debts = round(sum(current_debts.values()), 2)
+        d_nw = round(d_assets - d_debts, 2)
+
+        net_worth_series.append(
+            {
+                "date": d,
+                "month": d,
+                "total": d_nw,
+                "assets": d_assets,
+                "debts": d_debts,
+            }
+        )
+
+        entry: dict[str, Any] = {"date": d, "month": d}
         for a_name in known_assets:
-            entry[a_name] = round(float(m_data.get(a_name, 0.0)), 2)
+            entry[a_name] = round(float(current_assets.get(a_name, 0.0)), 2)
         asset_timeline.append(entry)
 
+    latest_assets_total = round(sum(current_assets.values()), 2)
+    latest_debts_total = round(sum(current_debts.values()), 2)
     latest_nw = net_worth_series[-1]["total"] if net_worth_series else 0.0
     prev_nw = net_worth_series[-2]["total"] if len(net_worth_series) >= 2 else latest_nw
     nw_delta = round(latest_nw - prev_nw, 2)
+
+    loans_summary: list[dict[str, Any]] = []
+    for loan in known_debts:
+        curr_bal = round(float(current_debts.get(loan, 0.0)), 2)
+        orig = 0.0
+        if loan in loans_metadata and isinstance(loans_metadata[loan], dict):
+            orig = float(loans_metadata[loan].get("original_amount", 0.0))
+        if orig <= 0.0:
+            past_bals = [
+                float(b[loan]) for b in debts_by_date.values() if isinstance(b, dict) and loan in b
+            ]
+            orig = max(past_bals) if past_bals else curr_bal
+
+        orig = round(orig, 2)
+        repaid = round(max(0.0, orig - curr_bal), 2)
+        pct = round((repaid / orig * 100.0), 1) if orig > 0.0 else 0.0
+
+        loans_summary.append(
+            {
+                "name": loan,
+                "original_amount": orig,
+                "current_balance": curr_bal,
+                "repaid_amount": repaid,
+                "pct_repaid": pct,
+            }
+        )
 
     # Internal movements
     internal_timeline: list[dict[str, Any]] = []
@@ -714,16 +775,18 @@ def build_wealth_data(
 
     return {
         "known_assets": known_assets,
+        "known_debts": known_debts,
         "assets_by_month": assets_data,
-        "latest_month": sorted_months[-1]
-        if sorted_months
-        else pd.Timestamp.now().strftime("%Y-%m"),
-        "latest_date": sorted_months[-1]
-        if sorted_months
-        else pd.Timestamp.now().strftime("%Y-%m-%d"),
-        "latest_balances": latest_balances,
+        "debts_by_month": debts_by_date,
+        "latest_month": all_dates[-1] if all_dates else pd.Timestamp.now().strftime("%Y-%m"),
+        "latest_date": all_dates[-1] if all_dates else pd.Timestamp.now().strftime("%Y-%m-%d"),
+        "latest_balances": current_assets,
+        "latest_debts": current_debts,
+        "latest_assets_total": latest_assets_total,
+        "latest_debts_total": latest_debts_total,
         "latest_net_worth": latest_nw,
         "net_worth_delta": nw_delta,
+        "loans_summary": loans_summary,
         "net_worth_series": net_worth_series,
         "asset_timeline": asset_timeline,
         "internal_timeline": internal_timeline,
