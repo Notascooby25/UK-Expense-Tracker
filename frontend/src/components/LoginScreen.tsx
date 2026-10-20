@@ -40,7 +40,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         <div className="flex items-center gap-3 mb-6">
           <BrandLogo size="md" />
           <div>
-            <h1 className="text-xl font-bold tracking-tight">UK Expense Tracker</h1>
+            <h1 className="text-xl font-bold tracking-tight">UK Finance Tracker</h1>
             <p className="text-sm text-[#485b69] dark:text-[#b0bec5]">
               Sign in to access your financial command center
             </p>

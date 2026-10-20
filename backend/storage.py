@@ -7,6 +7,7 @@ import os
 import tempfile
 import threading
 from typing import Any
+import uuid
 
 import pandas as pd
 
@@ -134,6 +135,7 @@ def resolve_scope_paths(account_scope: str) -> dict[str, str]:
         "filters": os.path.join(data_dir, get_scoped_filename(base_filters, scope)),
         "assets": os.path.join(data_dir, get_scoped_filename("assets.json", scope)),
         "debts": os.path.join(data_dir, get_scoped_filename("debts.json", scope)),
+        "mortgage": os.path.join(data_dir, get_scoped_filename("mortgage.json", scope)),
     }
 
 
@@ -322,6 +324,124 @@ def save_debts(scope: str, debts: dict[str, Any]) -> None:
     """Atomically save loan liabilities and balances for the given scope."""
     paths = resolve_scope_paths(scope)
     atomic_write_json(paths["debts"], debts)
+
+
+def load_mortgage(scope: str) -> dict[str, Any]:
+    """Load mortgage profile and overpayment records for the given scope."""
+    paths = resolve_scope_paths(scope)
+    raw = load_json_file(paths["mortgage"])
+    if not isinstance(raw, dict):
+        return {"profile": None, "overpayments": []}
+
+    profile = raw.get("profile")
+    if isinstance(profile, dict):
+        cleaned_profile = {
+            "original_balance": round(float(profile.get("original_balance", 0.0)), 2),
+            "current_balance": round(float(profile.get("current_balance", 0.0)), 2),
+            "interest_rate": round(float(profile.get("interest_rate", 0.0)), 2),
+            "monthly_payment": round(float(profile.get("monthly_payment", 0.0)), 2),
+            "remaining_term_months": int(profile.get("remaining_term_months", 0)),
+            "deal_expiry_date": clean_string(profile.get("deal_expiry_date", "")),
+            "mortgage_type": clean_string(profile.get("mortgage_type", "Fixed Rate"))
+            or "Fixed Rate",
+            "updated_at": clean_string(profile.get("updated_at", "")),
+        }
+    else:
+        cleaned_profile = None
+
+    raw_ops = raw.get("overpayments", [])
+    cleaned_ops: list[dict[str, Any]] = []
+    if isinstance(raw_ops, list):
+        for op in raw_ops:
+            if isinstance(op, dict):
+                cleaned_ops.append(
+                    {
+                        "id": clean_string(op.get("id", "")) or f"op_{uuid.uuid4().hex[:8]}",
+                        "date": clean_string(op.get("date", "")),
+                        "amount": round(float(op.get("amount", 0.0)), 2),
+                        "type": clean_string(op.get("type", "Monthly")) or "Monthly",
+                        "notes": clean_string(op.get("notes", "")),
+                    }
+                )
+
+    return {"profile": cleaned_profile, "overpayments": cleaned_ops}
+
+
+def save_mortgage(scope: str, data: dict[str, Any]) -> None:
+    """Atomically save mortgage profile and overpayments for the given scope."""
+    paths = resolve_scope_paths(scope)
+    atomic_write_json(paths["mortgage"], data)
+
+
+def update_mortgage_profile(scope: str, profile_data: dict[str, Any]) -> dict[str, Any]:
+    """Upsert mortgage profile for the given scope."""
+    with _STORAGE_LOCK:
+        mortgage = load_mortgage(scope)
+        cleaned_profile = {
+            "original_balance": round(float(profile_data.get("original_balance", 0.0)), 2),
+            "current_balance": round(float(profile_data.get("current_balance", 0.0)), 2),
+            "interest_rate": round(float(profile_data.get("interest_rate", 0.0)), 2),
+            "monthly_payment": round(float(profile_data.get("monthly_payment", 0.0)), 2),
+            "remaining_term_months": int(profile_data.get("remaining_term_months", 0)),
+            "deal_expiry_date": clean_string(profile_data.get("deal_expiry_date", "")),
+            "mortgage_type": clean_string(profile_data.get("mortgage_type", "Fixed Rate"))
+            or "Fixed Rate",
+            "updated_at": clean_string(profile_data.get("updated_at", "")),
+        }
+        mortgage["profile"] = cleaned_profile
+        save_mortgage(scope, mortgage)
+        return mortgage
+
+
+def add_mortgage_overpayment(scope: str, overpayment: dict[str, Any]) -> dict[str, Any]:
+    """Record a mortgage overpayment and decrement current mortgage balance."""
+    with _STORAGE_LOCK:
+        mortgage = load_mortgage(scope)
+        op_amount = round(float(overpayment.get("amount", 0.0)), 2)
+        op_entry = {
+            "id": clean_string(overpayment.get("id", "")) or f"op_{uuid.uuid4().hex[:8]}",
+            "date": clean_string(overpayment.get("date", "")),
+            "amount": op_amount,
+            "type": clean_string(overpayment.get("type", "Monthly")) or "Monthly",
+            "notes": clean_string(overpayment.get("notes", "")),
+        }
+
+        mortgage["overpayments"].insert(0, op_entry)
+
+        # Decrement profile balance if profile exists
+        if mortgage["profile"] and op_amount > 0.0:
+            current_bal = float(mortgage["profile"].get("current_balance", 0.0))
+            mortgage["profile"]["current_balance"] = round(max(0.0, current_bal - op_amount), 2)
+
+        save_mortgage(scope, mortgage)
+        return mortgage
+
+
+def delete_mortgage_overpayment(scope: str, overpayment_id: str) -> bool:
+    """Delete a mortgage overpayment by ID and restore the decremented balance."""
+    with _STORAGE_LOCK:
+        mortgage = load_mortgage(scope)
+        target_idx = None
+        target_amount = 0.0
+
+        for idx, op in enumerate(mortgage["overpayments"]):
+            if op.get("id") == overpayment_id:
+                target_idx = idx
+                target_amount = float(op.get("amount", 0.0))
+                break
+
+        if target_idx is None:
+            return False
+
+        mortgage["overpayments"].pop(target_idx)
+
+        # Restore profile balance
+        if mortgage["profile"] and target_amount > 0.0:
+            current_bal = float(mortgage["profile"].get("current_balance", 0.0))
+            mortgage["profile"]["current_balance"] = round(current_bal + target_amount, 2)
+
+        save_mortgage(scope, mortgage)
+        return True
 
 
 def load_transactions(scope: str) -> pd.DataFrame:

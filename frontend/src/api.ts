@@ -10,6 +10,11 @@ import {
   SyncResponse,
   TransactionRow,
   WealthPayload,
+  MortgageDataResponse,
+  MortgageProfile,
+  MortgageOverpayment,
+  MortgageCalculationParams,
+  MortgageSummary,
 } from './types';
 
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -440,5 +445,46 @@ export const api = {
         body: JSON.stringify(presets),
       }
     );
+  },
+
+  getMortgage(scope: AccountScope) {
+    return requestJson<MortgageDataResponse>(`/api/mortgage?scope=${encodeURIComponent(scope)}`);
+  },
+
+  saveMortgageProfile(scope: AccountScope, profile: MortgageProfile) {
+    return requestJson<{ profile: MortgageProfile; overpayments: MortgageOverpayment[] }>(
+      `/api/mortgage/profile?scope=${encodeURIComponent(scope)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(profile),
+      }
+    );
+  },
+
+  addMortgageOverpayment(
+    scope: AccountScope,
+    overpayment: Omit<MortgageOverpayment, 'id'>
+  ) {
+    return requestJson<{ profile: MortgageProfile | null; overpayments: MortgageOverpayment[] }>(
+      `/api/mortgage/overpayments?scope=${encodeURIComponent(scope)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(overpayment),
+      }
+    );
+  },
+
+  deleteMortgageOverpayment(scope: AccountScope, overpaymentId: string) {
+    return requestJson<{ status: string; deleted_id: string }>(
+      `/api/mortgage/overpayments/${encodeURIComponent(overpaymentId)}?scope=${encodeURIComponent(scope)}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  calculateMortgage(params: MortgageCalculationParams) {
+    return requestJson<MortgageSummary>('/api/mortgage/calculate', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
   },
 };

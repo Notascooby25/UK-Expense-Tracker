@@ -1,5 +1,5 @@
 export type AccountScope = 'Personal' | 'Joint';
-export type NavPage = 'dashboard' | 'transactions' | 'intelligence' | 'wealth' | 'settings';
+export type NavPage = 'dashboard' | 'transactions' | 'intelligence' | 'wealth' | 'settings' | 'mortgage';
 
 export interface AutoRule {
   name_contains: string;
@@ -249,4 +249,60 @@ export interface SyncResponse {
   new_rows: TransactionRow[];
   updated_rows?: TransactionRow[];
   conflicts?: SyncConflict[];
+}
+
+export interface MortgageProfile {
+  original_balance: number;
+  current_balance: number;
+  interest_rate: number;
+  monthly_payment: number;
+  remaining_term_months: number;
+  deal_expiry_date: string;
+  mortgage_type: string;
+  updated_at?: string;
+}
+
+export interface MortgageOverpayment {
+  id: string;
+  date: string;
+  amount: number;
+  type: string;
+  notes: string;
+}
+
+export interface MortgageTrajectoryPoint {
+  year: number;
+  month: number;
+  baseline_balance: number;
+  overpay_balance: number;
+}
+
+export interface MortgageSummary {
+  principal: number;
+  annual_rate_pct: number;
+  monthly_payment: number;
+  baseline_months: number;
+  overpay_months: number;
+  months_saved: number;
+  years_saved: number;
+  baseline_interest: number;
+  overpay_interest: number;
+  interest_saved: number;
+  trajectory: MortgageTrajectoryPoint[];
+}
+
+export interface MortgageDataResponse {
+  profile: MortgageProfile | null;
+  overpayments: MortgageOverpayment[];
+  summary: MortgageSummary | null;
+  annual_allowance: number;
+}
+
+export interface MortgageCalculationParams {
+  principal: number;
+  annual_rate_pct: number;
+  monthly_payment: number;
+  term_months: number;
+  monthly_overpayment?: number;
+  lump_sum?: number;
 }

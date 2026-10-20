@@ -5,6 +5,7 @@ import {
   Sparkles,
   Landmark,
   Settings,
+  Home,
   PlusCircle,
   Sun,
   Moon,
@@ -31,6 +32,7 @@ const NAV_ITEMS: Array<{ id: NavPage; label: string; Icon: React.ComponentType<{
   { id: 'transactions', label: 'Transactions', Icon: TableProperties },
   { id: 'intelligence', label: 'Intelligence', Icon: Sparkles },
   { id: 'wealth', label: 'Wealth', Icon: Landmark },
+  { id: 'mortgage', label: 'Mortgage', Icon: Home },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
 
@@ -53,7 +55,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           <div className="flex items-center gap-2.5">
             <BrandLogo size="sm" />
             <span className="font-bold text-base tracking-tight text-[#121a21] dark:text-white">
-              UK Expense Tracker
+              UK Finance Tracker
             </span>
           </div>
 

@@ -53,9 +53,12 @@ from backend.storage import (
     get_master_categories,
     get_matching_auto_rule,
     get_startup_health,
+    add_mortgage_overpayment,
+    delete_mortgage_overpayment,
     load_assets,
     load_debts,
     load_filters,
+    load_mortgage,
     load_settings,
     load_transactions,
     normalize_scope,
@@ -65,9 +68,14 @@ from backend.storage import (
     save_filters,
     save_settings,
     save_transactions,
+    update_mortgage_profile,
+)
+from backend.mortgage_utils import (
+    calculate_annual_allowance,
+    calculate_mortgage_summary,
 )
 
-app = FastAPI(title="UK Expense Tracker API", version=APP_VERSION)
+app = FastAPI(title="UK Finance Tracker API", version=APP_VERSION)
 
 
 # --- Pydantic Schemas ---
@@ -172,6 +180,32 @@ class TestRuleRequest(BaseModel):
     name: str = ""
     notes: str = ""
     amount: float = 0.0
+
+
+class MortgageProfileRequest(BaseModel):
+    original_balance: float = Field(default=0.0, ge=0.0)
+    current_balance: float = Field(default=0.0, ge=0.0)
+    interest_rate: float = Field(default=0.0, ge=0.0)
+    monthly_payment: float = Field(default=0.0, ge=0.0)
+    remaining_term_months: int = Field(default=0, ge=0)
+    deal_expiry_date: str = ""
+    mortgage_type: str = "Fixed Rate"
+
+
+class MortgageOverpaymentRequest(BaseModel):
+    date: str
+    amount: float = Field(gt=0.0)
+    type: str = "Monthly"
+    notes: str = ""
+
+
+class MortgageCalculationRequest(BaseModel):
+    principal: float = Field(gt=0.0)
+    annual_rate_pct: float = Field(ge=0.0)
+    monthly_payment: float = Field(ge=0.0)
+    term_months: int = Field(gt=0)
+    monthly_overpayment: float = Field(default=0.0, ge=0.0)
+    lump_sum: float = Field(default=0.0, ge=0.0)
 
 
 # --- Helpers ---
@@ -1041,6 +1075,91 @@ def update_filter_presets(
     norm_scope = normalize_scope(scope)
     save_filters(norm_scope, payload)
     return {"saved": True, "saved_filters": load_filters(norm_scope)}
+
+
+# --- Mortgage Endpoints ---
+@app.get("/api/mortgage")
+def get_mortgage(
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    mortgage_data = load_mortgage(norm_scope)
+    profile = mortgage_data.get("profile")
+    summary = None
+    annual_allowance = 0.0
+
+    if profile:
+        principal = float(profile.get("current_balance", 0.0))
+        rate = float(profile.get("interest_rate", 0.0))
+        payment = float(profile.get("monthly_payment", 0.0))
+        term = int(profile.get("remaining_term_months", 0))
+
+        annual_allowance = calculate_annual_allowance(principal)
+        if principal > 0 and term > 0:
+            summary = calculate_mortgage_summary(
+                principal=principal,
+                annual_rate_pct=rate,
+                monthly_payment=payment,
+                term_months=term,
+                monthly_overpayment=0.0,
+                lump_sum=0.0,
+            )
+
+    return {
+        "profile": profile,
+        "overpayments": mortgage_data.get("overpayments", []),
+        "summary": summary,
+        "annual_allowance": annual_allowance,
+    }
+
+
+@app.post("/api/mortgage/profile")
+def save_mortgage_profile_endpoint(
+    payload: MortgageProfileRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    return update_mortgage_profile(norm_scope, payload.model_dump())
+
+
+@app.post("/api/mortgage/overpayments")
+def create_mortgage_overpayment(
+    payload: MortgageOverpaymentRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    return add_mortgage_overpayment(norm_scope, payload.model_dump())
+
+
+@app.delete("/api/mortgage/overpayments/{overpayment_id}")
+def remove_mortgage_overpayment(
+    overpayment_id: str,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    deleted = delete_mortgage_overpayment(norm_scope, overpayment_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Overpayment not found")
+    return {"status": "success", "deleted_id": overpayment_id}
+
+
+@app.post("/api/mortgage/calculate")
+def calculate_mortgage_simulation_endpoint(
+    payload: MortgageCalculationRequest,
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    return calculate_mortgage_summary(
+        principal=payload.principal,
+        annual_rate_pct=payload.annual_rate_pct,
+        monthly_payment=payload.monthly_payment,
+        term_months=payload.term_months,
+        monthly_overpayment=payload.monthly_overpayment,
+        lump_sum=payload.lump_sum,
+    )
 
 
 # --- Static SPA Hosting (Production) ---

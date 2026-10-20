@@ -4,9 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.6.6"
+APP_VERSION = "0.7.0"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.7.0",
+        "date": "20 Oct 2026",
+        "title": "Mortgage Tracker, Overpayment Simulator & App Rebrand",
+        "changes": [
+            "Rebranded the application to UK Finance Tracker to reflect a complete personal finance suite covering expenses, wealth, and mortgages.",
+            "Added a dedicated Mortgage tab in top navigation with support for separate Personal and Joint mortgage profiles.",
+            "Added saved mortgage profile storage recording balance, interest rate, monthly payment, remaining term, and fixed-rate deal expiry countdown.",
+            "Implemented an interactive Overpayment Impact Calculator and Simulator with instant recalculation of years shaved off and interest saved.",
+            "Added an interactive Payoff Trajectory comparison graph (Recharts) visualizing standard vs accelerated mortgage payoff curves.",
+            "Added a standalone Overpayment History log to track extra payments without altering day-to-day split expense databases.",
+            "Added UK 10% annual penalty-free overpayment allowance helper with real-time tracking of current year overpayments.",
+        ],
+    },
     {
         "version": "0.6.6",
         "date": "19 Oct 2026",

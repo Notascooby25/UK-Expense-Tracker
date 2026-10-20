@@ -17,6 +17,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { TransactionsPage } from './pages/TransactionsPage';
 import { IntelligencePage } from './pages/IntelligencePage';
 import { WealthPage } from './pages/WealthPage';
+import { MortgagePage } from './pages/MortgagePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -26,7 +27,7 @@ export const App: React.FC = () => {
   const [authenticated, setAuthenticated] = useState(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [requireSecrets, setRequireSecrets] = useState(false);
-  const [appVersion, setAppVersion] = useState<string>('0.6.3');
+  const [appVersion, setAppVersion] = useState<string>('0.7.0');
   const [changelog, setChangelog] = useState<ChangelogEntry[]>([]);
 
   // Scope & Theme state
@@ -267,6 +268,8 @@ export const App: React.FC = () => {
             )}
 
             {activePage === 'wealth' && <WealthPage scope={scope} />}
+
+            {activePage === 'mortgage' && <MortgagePage scope={scope} />}
 
             {activePage === 'settings' && (
               <SettingsPage
