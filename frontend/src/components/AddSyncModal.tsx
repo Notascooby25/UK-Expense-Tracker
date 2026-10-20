@@ -57,6 +57,7 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
   // Newly synced / imported rows preview (already saved to disk; inline edits auto-save)
   const [reviewRows, setReviewRows] = useState<TransactionRow[]>([]);
   const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
+  const [memorizeConflicts, setMemorizeConflicts] = useState<boolean>(true);
   const [resolvingConflicts, setResolvingConflicts] = useState(false);
   const [syncSummary, setSyncSummary] = useState<{ newCount: number; updatedCount: number } | null>(
     null
@@ -152,21 +153,59 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
     }
   };
 
-  const handleKeepConflict = (rowId: number) => {
-    setConflicts((prev) => prev.filter((c) => c._row_id !== rowId));
-    onDataChanged('Kept current app category');
+  const handleKeepConflict = async (conflict: SyncConflict) => {
+    setResolvingConflicts(true);
+    try {
+      await api.resolveSyncConflicts(scope, [
+        {
+          row_id: conflict._row_id,
+          category: conflict.current_category,
+          name: conflict.Name,
+          memorize: memorizeConflicts,
+        },
+      ]);
+      setConflicts((prev) => prev.filter((c) => c._row_id !== conflict._row_id));
+      onDataChanged(`Kept app category "${conflict.current_category}" for "${conflict.Name}"`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save choice.');
+    } finally {
+      setResolvingConflicts(false);
+    }
   };
 
-  const handleKeepAllConflicts = () => {
-    setConflicts([]);
-    onDataChanged('Kept all current app categories');
+  const handleKeepAllConflicts = async () => {
+    if (conflicts.length === 0) return;
+    setResolvingConflicts(true);
+    try {
+      await api.resolveSyncConflicts(scope, {
+        resolutions: conflicts.map((c) => ({
+          row_id: c._row_id,
+          category: c.current_category,
+          name: c.Name,
+          memorize: memorizeConflicts,
+        })),
+        memorize_all: memorizeConflicts,
+      });
+      const count = conflicts.length;
+      setConflicts([]);
+      onDataChanged(`Kept app categories for ${count} transaction(s)`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save choices.');
+    } finally {
+      setResolvingConflicts(false);
+    }
   };
 
   const handleApplyMonzoConflict = async (conflict: SyncConflict) => {
     setResolvingConflicts(true);
     try {
       await api.resolveSyncConflicts(scope, [
-        { row_id: conflict._row_id, category: conflict.incoming_category },
+        {
+          row_id: conflict._row_id,
+          category: conflict.incoming_category,
+          name: conflict.Name,
+          memorize: memorizeConflicts,
+        },
       ]);
       setConflicts((prev) => prev.filter((c) => c._row_id !== conflict._row_id));
       onDataChanged(`Updated "${conflict.Name}" to Monzo category "${conflict.incoming_category}"`);
@@ -181,10 +220,15 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
     if (conflicts.length === 0) return;
     setResolvingConflicts(true);
     try {
-      await api.resolveSyncConflicts(
-        scope,
-        conflicts.map((c) => ({ row_id: c._row_id, category: c.incoming_category }))
-      );
+      await api.resolveSyncConflicts(scope, {
+        resolutions: conflicts.map((c) => ({
+          row_id: c._row_id,
+          category: c.incoming_category,
+          name: c.Name,
+          memorize: memorizeConflicts,
+        })),
+        memorize_all: memorizeConflicts,
+      });
       const count = conflicts.length;
       setConflicts([]);
       onDataChanged(`Updated ${count} transaction(s) to incoming Monzo category`);
@@ -583,8 +627,17 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
                       <p className="text-[11px] text-amber-800 dark:text-amber-300/90 mt-0.5">
                         Monzo has different categories for these existing transactions. By default, your app categories were kept safe. You can overwrite them below if you prefer.
                       </p>
+                      <label className="inline-flex items-center gap-1.5 mt-2 text-[11px] font-medium text-amber-900 dark:text-amber-200 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={memorizeConflicts}
+                          onChange={(e) => setMemorizeConflicts(e.target.checked)}
+                          className="rounded text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 border-amber-300 dark:border-amber-700"
+                        />
+                        <span>Remember decisions for these transactions and merchants (skip future prompts)</span>
+                      </label>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
                       <button
                         type="button"
                         disabled={resolvingConflicts}
@@ -641,7 +694,7 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
                                 <button
                                   type="button"
                                   disabled={resolvingConflicts}
-                                  onClick={() => handleKeepConflict(conflict._row_id)}
+                                  onClick={() => handleKeepConflict(conflict)}
                                   className="px-2 py-0.5 rounded text-[11px] font-medium border border-[#d6dfe5] dark:border-[#32424a] hover:bg-gray-100 dark:hover:bg-[#263238]"
                                 >
                                   Keep Mine

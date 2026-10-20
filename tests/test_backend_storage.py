@@ -288,3 +288,102 @@ def test_parse_and_merge_preserves_existing_category_and_flags_conflict():
     assert conflicts[0]["_row_id"] == 0
     assert conflicts[0]["current_category"] == "Groceries"
     assert conflicts[0]["incoming_category"] == "Shopping"
+
+
+def test_process_monzo_splits_with_currency_symbols():
+    """Verify Monzo split parser handles currency symbols (£, $, commas) gracefully."""
+    raw = pd.DataFrame(
+        [
+            {
+                "Date": "2026-05-10",
+                "Name": "Sainsburys",
+                "Amount": "-75.50",
+                "Category": "Groceries",
+                "Category split": "Groceries: £50.00, Household: £25.50",
+            }
+        ]
+    )
+    processed = process_monzo_splits(raw)
+    assert len(processed) == 2
+    assert set(processed["Category"]) == {"Groceries", "Household"}
+    assert list(processed["Amount"]) == [50.00, 25.50]
+    # Check parent split metadata attached
+    assert processed.iloc[0]["_parent_split_name"] == "Sainsburys"
+    assert processed.iloc[0]["_parent_split_amount"] == 75.50
+
+
+def test_parse_and_merge_replaces_unsplit_parent_with_splits():
+    """Verify an older unsplit transaction is automatically replaced when split child rows arrive."""
+    existing = pd.DataFrame(
+        [
+            {
+                "Date": pd.to_datetime("2026-05-10").normalize(),
+                "Name": "Sainsburys",
+                "Amount": 75.50,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Groceries",
+                "Notes": "",
+                "Financial_Year": "2026-2027",
+                "Is_Subscription": False,
+            }
+        ]
+    )
+    # Incoming sync data with the same transaction now split into two categories
+    incoming = pd.DataFrame(
+        [
+            {
+                "Date": "10/05/2026",
+                "Name": "Sainsburys",
+                "Amount": "-75.50",
+                "Category": "Groceries",
+                "Category split": "Groceries: £50.00, Household: £25.50",
+            }
+        ]
+    )
+    merged, new_rows, updated_rows, conflicts = parse_and_merge_import(
+        existing, incoming, rules=[], source_format="Monzo"
+    )
+    # The original 75.50 parent row should be dropped and replaced by the two split rows (50.00 and 25.50)
+    assert len(merged) == 2
+    assert not any(merged["Amount"] == 75.50)
+    assert set(merged["Category"]) == {"Groceries", "Household"}
+    assert set(merged["Amount"]) == {50.00, 25.50}
+
+
+def test_parse_and_merge_with_resolved_conflicts():
+    """Verify memorized conflicts are bypassed and do not re-prompt the user."""
+    existing = pd.DataFrame(
+        [
+            {
+                "Date": pd.to_datetime("2026-05-13").normalize(),
+                "Name": "Tesco Express",
+                "Amount": 15.50,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Groceries",  # User previously chose Groceries
+                "Notes": "",
+                "Financial_Year": "2026-2027",
+                "Is_Subscription": False,
+            }
+        ]
+    )
+    incoming_raw = pd.DataFrame(
+        [
+            {
+                "Date": "13/05/2026",
+                "Name": "Tesco Express",
+                "Amount": "-15.50",
+                "Category": "Shopping",  # Monzo default
+            }
+        ]
+    )
+    # Pass resolved_conflicts mapping
+    resolved = {"2026-05-13|Tesco Express|15.5": "Groceries"}
+    merged, new_rows, updated_rows, conflicts = parse_and_merge_import(
+        existing, incoming_raw, rules=[], source_format="Monzo", resolved_conflicts=resolved
+    )
+    assert merged.loc[0, "Category"] == "Groceries"
+    assert new_rows.empty
+    # Because it was in resolved_conflicts, no conflict prompt should be generated
+    assert len(conflicts) == 0

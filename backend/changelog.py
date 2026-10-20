@@ -4,9 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.7.2",
+        "date": "20 Oct 2026",
+        "title": "Overpayments History Editing, Savings Trajectory & Sync Memorization",
+        "changes": [
+            "Added full editing support for logged mortgage overpayments (date, amount, type, notes) with automatic balance recalculation.",
+            "Integrated logged overpayments into the mortgage savings engine, displaying real interest saved to date and months shaved off prior to future simulations.",
+            "Updated the mortgage trajectory graph to show 3 curves: Original Baseline, Current Path with logged overpayments, and Accelerated Simulation.",
+            "Added conflict memorization during bank sync: saving chosen categories permanently and creating merchant rules so you aren't prompted repeatedly for the same transactions.",
+            "Upgraded Monzo split category parser to safely strip currency symbols (£, $, commas) and automatically replace older unsplit parent transactions with newly split items without duplicates.",
+            "Fixed GitHub Actions container build and deployment workflow syntax to ensure automated updates publish to GHCR reliably.",
+        ],
+    },
     {
         "version": "0.7.1",
         "date": "20 Oct 2026",

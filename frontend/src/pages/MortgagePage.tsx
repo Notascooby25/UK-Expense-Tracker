@@ -98,6 +98,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
 
   // Overpayment Log Modal State
   const [showOverpaymentModal, setShowOverpaymentModal] = useState(false);
+  const [editingOverpayment, setEditingOverpayment] = useState<MortgageOverpayment | null>(null);
   const [overpayDate, setOverpayDate] = useState(() => {
     const d = new Date();
     return d.toISOString().split('T')[0];
@@ -168,24 +169,54 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
     }
   };
 
-  // Handle Add Overpayment
-  const handleAddOverpayment = async (e: React.FormEvent) => {
+  const handleOpenCreateOverpayment = () => {
+    setEditingOverpayment(null);
+    const d = new Date();
+    setOverpayDate(d.toISOString().split('T')[0]);
+    setOverpayAmount('150.00');
+    setOverpayType('Monthly');
+    setOverpayNotes('');
+    setShowOverpaymentModal(true);
+  };
+
+  const handleOpenEditOverpayment = (op: MortgageOverpayment) => {
+    setEditingOverpayment(op);
+    setOverpayDate(op.date);
+    setOverpayAmount(op.amount.toString());
+    setOverpayType(op.type || 'Monthly');
+    setOverpayNotes(op.notes || '');
+    setShowOverpaymentModal(true);
+  };
+
+  // Handle Add or Edit Overpayment
+  const handleSaveOverpayment = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(overpayAmount);
     if (isNaN(amt) || amt <= 0) return;
     try {
-      await api.addMortgageOverpayment(scope, {
-        date: overpayDate,
-        amount: amt,
-        type: overpayType,
-        notes: overpayNotes,
-      });
+      if (editingOverpayment) {
+        await api.updateMortgageOverpayment(scope, editingOverpayment.id, {
+          date: overpayDate,
+          amount: amt,
+          type: overpayType,
+          notes: overpayNotes,
+        });
+        showToast(`Updated overpayment record of ${formatCurrencyPrecise(amt)}`);
+      } else {
+        await api.addMortgageOverpayment(scope, {
+          date: overpayDate,
+          amount: amt,
+          type: overpayType,
+          notes: overpayNotes,
+        });
+        showToast(`Logged overpayment of ${formatCurrencyPrecise(amt)}`);
+      }
       setShowOverpaymentModal(false);
+      setEditingOverpayment(null);
       setOverpayNotes('');
-      showToast(`Logged overpayment of ${formatCurrencyPrecise(amt)}`);
       loadData();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to log overpayment';
+      const message = err instanceof Error ? err.message : 'Failed to save overpayment';
       setError(message);
     }
   };
@@ -205,7 +236,13 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
     }
   };
 
-  // Real-time client-side simulation based on profile & simulator inputs
+  // Total past overpayments logged in database
+  const pastOverpaymentsTotal = useMemo(() => {
+    if (!data?.overpayments) return 0;
+    return data.overpayments.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+  }, [data?.overpayments]);
+
+  // Real-time client-side simulation based on profile, past overpayments & simulator inputs
   const simulation = useMemo(() => {
     if (!data?.profile || data.profile.current_balance <= 0) return null;
     return computeClientMortgageSummary(
@@ -214,9 +251,10 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
       data.profile.monthly_payment,
       data.profile.remaining_term_months,
       Number(simMonthlyOverpay) || 0,
-      Number(simLumpSum) || 0
+      Number(simLumpSum) || 0,
+      pastOverpaymentsTotal
     );
-  }, [data?.profile, simMonthlyOverpay, simLumpSum]);
+  }, [data?.profile, simMonthlyOverpay, simLumpSum, pastOverpaymentsTotal]);
 
   // Deal Expiry Countdown Helper
   const dealExpiryInfo = useMemo(() => {
@@ -454,7 +492,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                       <input
                         type="number"
                         min="0"
-                        step="0.01"
+                        step="any"
                         value={simMonthlyOverpay}
                         onChange={(e) => setSimMonthlyOverpay(Math.max(0, parseFloat(e.target.value) || 0))}
                         className="w-24 px-2 py-0.5 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded text-right tabular-nums"
@@ -491,7 +529,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                     <input
                       type="number"
                       min="0"
-                      step="0.01"
+                      step="any"
                       value={simLumpSum}
                       onChange={(e) => setSimLumpSum(e.target.value)}
                       placeholder="e.g. 2000.00"
@@ -502,30 +540,49 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
               </div>
 
               {/* Simulation Result KPI Cards */}
-              <div className="lg:col-span-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-xl p-4 text-center space-y-1">
-                  <div className="text-xs uppercase font-semibold text-emerald-800 dark:text-emerald-300">
-                    Time Shaved Off
+              <div className="lg:col-span-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. Saved So Far */}
+                <div className="bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900 rounded-xl p-3.5 text-center space-y-1">
+                  <div className="text-[11px] uppercase font-bold text-sky-800 dark:text-sky-300">
+                    Saved So Far (Logged)
                   </div>
-                  <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">
-                    {simulation
-                      ? `${Math.floor(simulation.months_saved / 12)} yrs ${simulation.months_saved % 12} mos`
-                      : '0 yrs 0 mos'}
+                  <div className="text-xl font-extrabold text-sky-600 dark:text-sky-400">
+                    {formatCurrency(simulation?.past_interest_saved || 0)}
                   </div>
-                  <div className="text-xs text-emerald-700/80 dark:text-emerald-400/80">
-                    Free by {payoffTargetDate || '—'}
+                  <div className="text-[11px] text-sky-700/80 dark:text-sky-400/80">
+                    {simulation?.past_months_saved && simulation.past_months_saved > 0
+                      ? `${simulation.past_months_saved} mos shaved already`
+                      : pastOverpaymentsTotal > 0
+                      ? `${formatCurrency(pastOverpaymentsTotal)} total logged`
+                      : 'No payments logged yet'}
                   </div>
                 </div>
 
-                <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-xl p-4 text-center space-y-1">
-                  <div className="text-xs uppercase font-semibold text-emerald-800 dark:text-emerald-300">
-                    Total Interest Saved
+                {/* 2. Future Extra Savings */}
+                <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-xl p-3.5 text-center space-y-1">
+                  <div className="text-[11px] uppercase font-bold text-emerald-800 dark:text-emerald-300">
+                    Future Extra Savings
                   </div>
-                  <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                  <div className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(simulation?.simulated_interest_saved || 0)}
+                  </div>
+                  <div className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
+                    {simulation?.simulated_months_saved && simulation.simulated_months_saved > 0
+                      ? `+${Math.floor(simulation.simulated_months_saved / 12)}y ${simulation.simulated_months_saved % 12}m further off`
+                      : 'From slider & lump sum'}
+                  </div>
+                </div>
+
+                {/* 3. Total Combined Savings */}
+                <div className="bg-emerald-100/60 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded-xl p-3.5 text-center space-y-1">
+                  <div className="text-[11px] uppercase font-bold text-emerald-900 dark:text-emerald-200">
+                    Total Combined Savings
+                  </div>
+                  <div className="text-xl font-extrabold text-emerald-700 dark:text-emerald-300">
                     {formatCurrency(simulation?.interest_saved || 0)}
                   </div>
-                  <div className="text-xs text-emerald-700/80 dark:text-emerald-400/80">
-                    Kept in your pocket
+                  <div className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80">
+                    Free by {payoffTargetDate || '—'}
                   </div>
                 </div>
               </div>
@@ -541,7 +598,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                     Mortgage Payoff Trajectory
                   </h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Comparing standard repayment timeline against your accelerated overpayment plan
+                    Comparing original loan baseline against your logged progress and accelerated overpayment plan
                   </p>
                 </div>
               </div>
@@ -568,7 +625,11 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                     <Tooltip
                       formatter={(value: any, name: any) => [
                         formatCurrency(Number(value) || 0),
-                        name === 'baseline_balance' ? 'Standard Path' : 'With Overpayments',
+                        name === 'baseline_balance'
+                          ? 'Original Baseline (No Overpayments)'
+                          : name === 'current_balance'
+                          ? 'Current Path (With Logged Overpayments)'
+                          : 'Accelerated Plan (Future Overpayments)',
                       ]}
                       labelFormatter={(label) => `Timeline: Year ${label}`}
                       contentStyle={{
@@ -580,18 +641,37 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                       }}
                     />
                     <Legend
-                      formatter={(val) => (val === 'baseline_balance' ? 'Standard Plan (£0 extra)' : 'Accelerated Plan')}
+                      formatter={(val) =>
+                        val === 'baseline_balance'
+                          ? 'Original Baseline (£0 extra)'
+                          : val === 'current_balance'
+                          ? 'Current Path (Logged)'
+                          : 'Accelerated Plan'
+                      }
                     />
                     <Line
                       type="monotone"
                       dataKey="baseline_balance"
-                      stroke="#3b82f6"
+                      name="baseline_balance"
+                      stroke="#94a3b8"
+                      strokeDasharray="4 4"
                       strokeWidth={2}
                       dot={false}
                     />
+                    {pastOverpaymentsTotal > 0 && (
+                      <Line
+                        type="monotone"
+                        dataKey="current_balance"
+                        name="current_balance"
+                        stroke="#0284c7"
+                        strokeWidth={2.5}
+                        dot={false}
+                      />
+                    )}
                     <Line
                       type="monotone"
                       dataKey="overpay_balance"
+                      name="overpay_balance"
                       stroke="#10b981"
                       strokeWidth={3}
                       dot={false}
@@ -645,7 +725,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   </p>
                 </div>
                 <button
-                  onClick={() => setShowOverpaymentModal(true)}
+                  onClick={handleOpenCreateOverpayment}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#10b981] hover:bg-[#059669] text-white transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -679,8 +759,8 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                             <span
                               className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
                                 op.type === 'Lump Sum'
-                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
-                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
                               }`}
                             >
                               {op.type}
@@ -692,13 +772,20 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                           <td className="py-2.5 px-3 text-xs text-gray-500 dark:text-gray-400 max-w-xs truncate">
                             {op.notes || '—'}
                           </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap text-right">
+                          <td className="py-2.5 px-3 whitespace-nowrap text-right space-x-1">
+                            <button
+                              onClick={() => handleOpenEditOverpayment(op)}
+                              className="text-gray-400 hover:text-blue-500 transition-colors p-1"
+                              title="Edit overpayment record"
+                            >
+                              <Edit3 className="w-4 h-4 inline" />
+                            </button>
                             <button
                               onClick={() => handleDeleteOverpayment(op.id, op.amount)}
                               className="text-gray-400 hover:text-red-500 transition-colors p-1"
                               title="Delete overpayment record"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-4 h-4 inline" />
                             </button>
                           </td>
                         </tr>
@@ -737,7 +824,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   <input
                     type="number"
                     min="0"
-                    step="0.01"
+                    step="any"
                     required
                     value={profileForm.original_balance}
                     onChange={(e) =>
@@ -754,7 +841,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   <input
                     type="number"
                     min="0"
-                    step="0.01"
+                    step="any"
                     required
                     value={profileForm.current_balance}
                     onChange={(e) =>
@@ -774,7 +861,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                     type="number"
                     min="0"
                     max="30"
-                    step="0.01"
+                    step="any"
                     required
                     value={profileForm.interest_rate}
                     onChange={(e) =>
@@ -791,7 +878,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   <input
                     type="number"
                     min="0"
-                    step="0.01"
+                    step="any"
                     required
                     value={profileForm.monthly_payment}
                     onChange={(e) =>
@@ -904,23 +991,26 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
         </div>
       )}
 
-      {/* Log Overpayment Modal */}
+      {/* Log / Edit Overpayment Modal */}
       {showOverpaymentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
           <div className="bg-white dark:bg-[#1b262c] border border-[#d6dfe5] dark:border-[#32424a] rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-3">
               <h3 className="font-bold text-lg text-[#121a21] dark:text-white">
-                Log Mortgage Overpayment
+                {editingOverpayment ? 'Edit Mortgage Overpayment' : 'Log Mortgage Overpayment'}
               </h3>
               <button
-                onClick={() => setShowOverpaymentModal(false)}
+                onClick={() => {
+                  setShowOverpaymentModal(false);
+                  setEditingOverpayment(null);
+                }}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddOverpayment} className="space-y-4">
+            <form onSubmit={handleSaveOverpayment} className="space-y-4">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
                   Payment Date
@@ -942,7 +1032,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   <input
                     type="number"
                     min="0.01"
-                    step="0.01"
+                    step="any"
                     required
                     value={overpayAmount}
                     onChange={(e) => setOverpayAmount(e.target.value)}
@@ -979,13 +1069,18 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
               </div>
 
               <p className="text-xs text-gray-500 dark:text-gray-400 pt-1">
-                Logging this overpayment will directly decrement your saved mortgage balance and update your annual 10% allowance tracking.
+                {editingOverpayment
+                  ? 'Updating this entry will automatically adjust the mortgage balance by the difference.'
+                  : 'Logging this overpayment will directly decrement your saved mortgage balance and update your annual 10% allowance tracking.'}
               </p>
 
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
-                  onClick={() => setShowOverpaymentModal(false)}
+                  onClick={() => {
+                    setShowOverpaymentModal(false);
+                    setEditingOverpayment(null);
+                  }}
                   className="px-4 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
                   Cancel
@@ -994,7 +1089,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   type="submit"
                   className="px-5 py-2 rounded-lg text-sm font-medium bg-[#10b981] hover:bg-[#059669] text-white shadow-sm transition-colors"
                 >
-                  Confirm Overpayment
+                  {editingOverpayment ? 'Save Changes' : 'Confirm Overpayment'}
                 </button>
               </div>
             </form>

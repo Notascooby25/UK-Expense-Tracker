@@ -157,3 +157,48 @@ def test_calculate_annual_allowance():
     assert calculate_annual_allowance(214500.0, allowance_pct=10.0) == 21450.0
     assert calculate_annual_allowance(100000.0) == 10000.0
     assert calculate_annual_allowance(0.0) == 0.0
+
+
+def test_calculate_mortgage_summary_with_past_overpayments():
+    """Verify past overpayments are factored into savings and 3 trajectory series."""
+    # Suppose current remaining balance is £190,000, but £10,000 was already overpaid
+    principal = 190000.0
+    past_overpayments = 10000.0
+    rate = 4.0
+    payment = 1055.67
+    term = 300
+
+    summary = calculate_mortgage_summary(
+        principal=principal,
+        annual_rate_pct=rate,
+        monthly_payment=payment,
+        term_months=term,
+        monthly_overpayment=100.0,
+        lump_sum=0.0,
+        past_overpayments=past_overpayments,
+    )
+
+    assert summary["principal"] == 190000.0
+    assert summary["unadjusted_principal"] == 200000.0
+    assert summary["past_overpayments"] == 10000.0
+    # Past overpayment of £10k should yield positive past interest and months saved
+    assert summary["past_interest_saved"] > 0.0
+    assert summary["past_months_saved"] > 0
+    # Future overpayment of £100/mo should yield additional simulated savings
+    assert summary["simulated_interest_saved"] > 0.0
+    assert summary["simulated_months_saved"] > 0
+    # Total combined savings
+    assert summary["interest_saved"] == round(
+        summary["past_interest_saved"] + summary["simulated_interest_saved"], 2
+    )
+    assert (
+        summary["months_saved"] == summary["past_months_saved"] + summary["simulated_months_saved"]
+    )
+
+    # Trajectory points should contain all 3 balance curves
+    trajectory = summary["trajectory"]
+    assert len(trajectory) > 0
+    first_pt = trajectory[0]
+    assert first_pt["baseline_balance"] == 200000.0
+    assert first_pt["current_balance"] == 190000.0
+    assert first_pt["overpay_balance"] == 190000.0

@@ -6,6 +6,7 @@ from backend.storage import (
     ACCOUNT_SCOPE_JOINT,
     ACCOUNT_SCOPE_PERSONAL,
     add_mortgage_overpayment,
+    update_mortgage_overpayment,
     delete_mortgage_overpayment,
     load_mortgage,
     save_mortgage,
@@ -110,3 +111,49 @@ def test_add_and_delete_mortgage_overpayment():
     assert len(loaded_after["overpayments"]) == 0
     # Balance should be restored to £200,000
     assert loaded_after["profile"]["current_balance"] == 200000.0
+
+
+def test_update_mortgage_overpayment():
+    """Verify editing an overpayment adjusts mortgage balance by the difference."""
+    profile = {
+        "original_balance": 200000.0,
+        "current_balance": 200000.0,
+        "interest_rate": 4.0,
+        "monthly_payment": 1055.0,
+        "remaining_term_months": 300,
+        "deal_expiry_date": "2027-05-31",
+        "mortgage_type": "Fixed Rate",
+    }
+    update_mortgage_profile(ACCOUNT_SCOPE_PERSONAL, profile)
+
+    # Initial overpayment of £1,000 -> balance becomes £199,000
+    res = add_mortgage_overpayment(
+        ACCOUNT_SCOPE_PERSONAL,
+        {"date": "2026-10-01", "amount": 1000.0, "type": "Monthly", "notes": "Initial"},
+    )
+    op_id = res["overpayments"][0]["id"]
+    assert res["profile"]["current_balance"] == 199000.0
+
+    # Edit amount to £1,500 (+£500) -> balance becomes £198,500
+    res2 = update_mortgage_overpayment(
+        ACCOUNT_SCOPE_PERSONAL,
+        op_id,
+        {"date": "2026-10-02", "amount": 1500.0, "type": "Lump Sum", "notes": "Corrected higher"},
+    )
+    assert res2["profile"]["current_balance"] == 198500.0
+    assert res2["overpayments"][0]["amount"] == 1500.0
+    assert res2["overpayments"][0]["type"] == "Lump Sum"
+    assert res2["overpayments"][0]["notes"] == "Corrected higher"
+
+    # Edit amount to £800 (-£700) -> balance becomes £199,200
+    res3 = update_mortgage_overpayment(
+        ACCOUNT_SCOPE_PERSONAL,
+        op_id,
+        {"date": "2026-10-02", "amount": 800.0, "type": "Monthly", "notes": "Lower"},
+    )
+    assert res3["profile"]["current_balance"] == 199200.0
+    assert res3["overpayments"][0]["amount"] == 800.0
+
+    # Non-existent ID raises ValueError
+    with pytest.raises(ValueError):
+        update_mortgage_overpayment(ACCOUNT_SCOPE_PERSONAL, "non_existent_id", {"amount": 500.0})

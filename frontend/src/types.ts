@@ -242,6 +242,18 @@ export interface SyncConflict {
   incoming_category: string;
 }
 
+export interface ConflictResolutionItem {
+  row_id: number;
+  category: string;
+  name?: string;
+  memorize?: boolean;
+}
+
+export interface ResolveConflictsRequest {
+  resolutions: ConflictResolutionItem[];
+  memorize_all?: boolean;
+}
+
 export interface SyncResponse {
   saved: boolean;
   new_count: number;
@@ -274,18 +286,27 @@ export interface MortgageTrajectoryPoint {
   year: number;
   month: number;
   baseline_balance: number;
+  current_balance?: number;
   overpay_balance: number;
 }
 
 export interface MortgageSummary {
   principal: number;
+  unadjusted_principal?: number;
   annual_rate_pct: number;
   monthly_payment: number;
   baseline_months: number;
+  current_months?: number;
   overpay_months: number;
+  past_overpayments?: number;
+  past_interest_saved?: number;
+  past_months_saved?: number;
+  simulated_interest_saved?: number;
+  simulated_months_saved?: number;
   months_saved: number;
   years_saved: number;
   baseline_interest: number;
+  current_interest?: number;
   overpay_interest: number;
   interest_saved: number;
   trajectory: MortgageTrajectoryPoint[];
@@ -305,4 +326,5 @@ export interface MortgageCalculationParams {
   term_months: number;
   monthly_overpayment?: number;
   lump_sum?: number;
+  past_overpayments?: number;
 }

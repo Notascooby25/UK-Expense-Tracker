@@ -54,6 +54,7 @@ from backend.storage import (
     get_matching_auto_rule,
     get_startup_health,
     add_mortgage_overpayment,
+    update_mortgage_overpayment,
     delete_mortgage_overpayment,
     load_assets,
     load_debts,
@@ -145,10 +146,13 @@ class SyncConfirmRequest(BaseModel):
 class ConflictResolutionItem(BaseModel):
     row_id: int
     category: str
+    name: str = ""
+    memorize: bool = False
 
 
 class ResolveConflictsRequest(BaseModel):
     resolutions: list[ConflictResolutionItem]
+    memorize_all: bool = False
 
 
 class IntelligenceActionRequest(BaseModel):
@@ -206,6 +210,7 @@ class MortgageCalculationRequest(BaseModel):
     term_months: int = Field(gt=0)
     monthly_overpayment: float = Field(default=0.0, ge=0.0)
     lump_sum: float = Field(default=0.0, ge=0.0)
+    past_overpayments: float = Field(default=0.0, ge=0.0)
 
 
 # --- Helpers ---
@@ -658,7 +663,11 @@ def sync_from_gsheets(
     existing_df = load_transactions(norm_scope)
     pre_len = len(existing_df)
     merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
-        existing_df, raw_df, settings.get("auto_rules", []), source_format="Monzo"
+        existing_df,
+        raw_df,
+        settings.get("auto_rules", []),
+        source_format="Monzo",
+        resolved_conflicts=settings.get("resolved_conflicts", {}),
     )
     save_transactions(norm_scope, merged_df)
 
@@ -699,7 +708,11 @@ async def import_csv_file(
     existing_df = load_transactions(norm_scope)
     pre_len = len(existing_df)
     merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
-        existing_df, raw_df, settings.get("auto_rules", []), source_format=source_format
+        existing_df,
+        raw_df,
+        settings.get("auto_rules", []),
+        source_format=source_format,
+        resolved_conflicts=settings.get("resolved_conflicts", {}),
     )
     save_transactions(norm_scope, merged_df)
 
@@ -738,7 +751,11 @@ def import_pasted_rows(
     existing_df = load_transactions(norm_scope)
     pre_len = len(existing_df)
     merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
-        existing_df, raw_df, settings.get("auto_rules", []), source_format=payload.source_format
+        existing_df,
+        raw_df,
+        settings.get("auto_rules", []),
+        source_format=payload.source_format,
+        resolved_conflicts=settings.get("resolved_conflicts", {}),
     )
     save_transactions(norm_scope, merged_df)
 
@@ -766,13 +783,49 @@ def resolve_sync_conflicts(
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
+    settings = load_settings(norm_scope)
+    if "resolved_conflicts" not in settings or not isinstance(settings["resolved_conflicts"], dict):
+        settings["resolved_conflicts"] = {}
+    if "auto_rules" not in settings or not isinstance(settings["auto_rules"], list):
+        settings["auto_rules"] = []
+
     applied_count = 0
     for item in payload.resolutions:
         if 0 <= item.row_id < len(df):
-            df.at[item.row_id, "Category"] = clean_string(item.category)
+            chosen_cat = clean_string(item.category)
+            df.at[item.row_id, "Category"] = chosen_cat
             applied_count += 1
+
+            # Build stable signature to remember this transaction across future syncs
+            row_date = str(pd.to_datetime(df.loc[item.row_id, "Date"]).strftime("%Y-%m-%d"))
+            row_name = clean_string(df.loc[item.row_id, "Name"])
+            row_amt = round(float(df.loc[item.row_id, "Amount"]), 2)
+            sig = f"{row_date}|{row_name}|{row_amt}"
+            settings["resolved_conflicts"][sig] = chosen_cat
+
+            # If user checked "memorize", add or update auto-rule for this merchant
+            if item.memorize or payload.memorize_all:
+                merchant_name = clean_string(item.name) or row_name
+                if merchant_name:
+                    existing_rule = next(
+                        (
+                            r
+                            for r in settings["auto_rules"]
+                            if str(r.get("pattern", "")).strip().lower() == merchant_name.lower()
+                        ),
+                        None,
+                    )
+                    if existing_rule:
+                        existing_rule["category"] = chosen_cat
+                    else:
+                        settings["auto_rules"].append(
+                            {"pattern": merchant_name, "category": chosen_cat}
+                        )
+
     if applied_count > 0:
         save_transactions(norm_scope, df)
+        save_settings(norm_scope, settings)
+
     return {"saved": True, "applied_count": applied_count}
 
 
@@ -1096,6 +1149,9 @@ def get_mortgage(
         term = int(profile.get("remaining_term_months", 0))
 
         annual_allowance = calculate_annual_allowance(principal)
+        past_overpayments = sum(
+            float(op.get("amount", 0.0)) for op in mortgage_data.get("overpayments", [])
+        )
         if principal > 0 and term > 0:
             summary = calculate_mortgage_summary(
                 principal=principal,
@@ -1104,6 +1160,7 @@ def get_mortgage(
                 term_months=term,
                 monthly_overpayment=0.0,
                 lump_sum=0.0,
+                past_overpayments=past_overpayments,
             )
 
     return {
@@ -1134,6 +1191,20 @@ def create_mortgage_overpayment(
     return add_mortgage_overpayment(norm_scope, payload.model_dump())
 
 
+@app.put("/api/mortgage/overpayments/{overpayment_id}")
+def edit_mortgage_overpayment(
+    overpayment_id: str,
+    payload: MortgageOverpaymentRequest,
+    scope: str = Query("Personal"),
+    _user: str = Depends(require_auth),
+) -> dict[str, Any]:
+    norm_scope = normalize_scope(scope)
+    try:
+        return update_mortgage_overpayment(norm_scope, overpayment_id, payload.model_dump())
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+
+
 @app.delete("/api/mortgage/overpayments/{overpayment_id}")
 def remove_mortgage_overpayment(
     overpayment_id: str,
@@ -1159,6 +1230,7 @@ def calculate_mortgage_simulation_endpoint(
         term_months=payload.term_months,
         monthly_overpayment=payload.monthly_overpayment,
         lump_sum=payload.lump_sum,
+        past_overpayments=payload.past_overpayments,
     )
 
 

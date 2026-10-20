@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import threading
 from typing import Any
@@ -444,6 +445,41 @@ def delete_mortgage_overpayment(scope: str, overpayment_id: str) -> bool:
         return True
 
 
+def update_mortgage_overpayment(
+    scope: str, overpayment_id: str, updated: dict[str, Any]
+) -> dict[str, Any]:
+    """Update an existing overpayment and adjust mortgage current balance by the difference."""
+    with _STORAGE_LOCK:
+        mortgage = load_mortgage(scope)
+        target = None
+        for op in mortgage.get("overpayments", []):
+            if op.get("id") == overpayment_id:
+                target = op
+                break
+
+        if not target:
+            raise ValueError(f"Overpayment {overpayment_id} not found")
+
+        old_amount = float(target.get("amount", 0.0))
+        new_amount = round(float(updated.get("amount", old_amount)), 2)
+        amount_diff = new_amount - old_amount
+
+        target["date"] = clean_string(updated.get("date", target.get("date", "")))
+        target["amount"] = new_amount
+        target["type"] = (
+            clean_string(updated.get("type", target.get("type", "Monthly"))) or "Monthly"
+        )
+        target["notes"] = clean_string(updated.get("notes", target.get("notes", "")))
+
+        # Adjust current balance by the change in overpayment amount
+        if mortgage.get("profile") and amount_diff != 0.0:
+            current_bal = float(mortgage["profile"].get("current_balance", 0.0))
+            mortgage["profile"]["current_balance"] = round(max(0.0, current_bal - amount_diff), 2)
+
+        save_mortgage(scope, mortgage)
+        return mortgage
+
+
 def load_transactions(scope: str) -> pd.DataFrame:
     """Load scoped transactions CSV into a normalized DataFrame."""
     with _STORAGE_LOCK:
@@ -582,7 +618,7 @@ def process_monzo_splits(df: pd.DataFrame) -> pd.DataFrame:
     if not split_col:
         return df
 
-    new_rows: list[pd.Series] = []
+    new_rows: list[dict[str, Any]] = []
     rows_to_drop: list[Any] = []
     for index, row in df.iterrows():
         split_data = str(row[split_col])
@@ -590,14 +626,29 @@ def process_monzo_splits(df: pd.DataFrame) -> pd.DataFrame:
             rows_to_drop.append(index)
             try:
                 splits = split_data.split(",")
+                parent_date = row.get("Date", "")
+                parent_name = str(row.get("Name", "")).strip()
+                raw_parent_amt = str(row.get("Amount", "0.0"))
+                clean_parent_amt = re.sub(r"[^\d.-]", "", raw_parent_amt)
+                parent_amt = abs(float(clean_parent_amt)) if clean_parent_amt else 0.0
+
                 for split in splits:
-                    cat, amount = split.split(":")
-                    new_row = row.copy()
-                    new_row["Category"] = cat.strip()
-                    new_row["Amount"] = abs(float(amount.strip()))
-                    new_rows.append(new_row)
+                    if ":" not in split:
+                        continue
+                    cat, amount = split.split(":", 1)
+                    clean_amt = re.sub(r"[^\d.-]", "", amount.strip())
+                    if not clean_amt:
+                        continue
+                    new_dict = row.to_dict()
+                    new_dict["Category"] = cat.strip()
+                    new_dict["Amount"] = abs(float(clean_amt))
+                    new_dict["_parent_split_date"] = parent_date
+                    new_dict["_parent_split_name"] = parent_name
+                    new_dict["_parent_split_amount"] = parent_amt
+                    new_rows.append(new_dict)
             except Exception:
-                rows_to_drop.remove(index)
+                if index in rows_to_drop:
+                    rows_to_drop.remove(index)
 
     out = df.copy()
     if rows_to_drop:
@@ -690,6 +741,7 @@ def parse_and_merge_import(
     raw_df: pd.DataFrame,
     rules: list[dict[str, Any]],
     source_format: str = "Auto-Detect",
+    resolved_conflicts: dict[str, str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[dict[str, Any]]]:
     """
     Parse an incoming DataFrame (Monzo, HSBC, Barclaycard, or Manual/Auto-Detect)
@@ -789,6 +841,46 @@ def parse_and_merge_import(
     new_df = apply_auto_rules(new_df, rules)
 
     merged_df = existing_df.copy() if not existing_df.empty else pd.DataFrame(columns=COLS)
+
+    # Retrospective split check: if incoming rows contain splits from an unsplit parent in merged_df,
+    # drop the unsplit parent transaction so the separated split rows replace it cleanly without duplicates.
+    if (
+        not merged_df.empty
+        and "_parent_split_date" in new_df.columns
+        and "_parent_split_name" in new_df.columns
+        and "_parent_split_amount" in new_df.columns
+    ):
+        parent_candidates = (
+            new_df[["_parent_split_date", "_parent_split_name", "_parent_split_amount"]]
+            .dropna()
+            .drop_duplicates()
+        )
+        parents_to_remove = []
+        for _, p in parent_candidates.iterrows():
+            p_date = pd.to_datetime(p["_parent_split_date"], dayfirst=True, errors="coerce")
+            p_name = clean_string(p["_parent_split_name"])
+            try:
+                p_amt = round(float(p["_parent_split_amount"]), 2)
+            except Exception:
+                p_amt = 0.0
+
+            if pd.isna(p_date) or p_amt <= 0.0:
+                continue
+
+            p_date_norm = p_date.normalize()
+            db_names = merged_df["Name"].fillna("").astype(str).str.strip()
+            p_mask = (
+                (merged_df["Date"] == p_date_norm)
+                & (db_names == p_name)
+                & (pd.to_numeric(merged_df["Amount"]).round(2) == p_amt)
+            )
+            matched_parents = list(merged_df.index[p_mask])
+            if matched_parents:
+                parents_to_remove.extend(matched_parents)
+
+        if parents_to_remove:
+            merged_df = merged_df.drop(index=list(set(parents_to_remove))).reset_index(drop=True)
+
     new_list: list[pd.Series] = []
     updated_list: list[pd.Series] = []
     conflicts_list: list[dict[str, Any]] = []
@@ -814,25 +906,31 @@ def parse_and_merge_import(
             matched_indexes.add(idx)
             old_cat = clean_string(merged_df.loc[idx, "Category"])
             new_cat = clean_string(row["Category"])
+            row_date_str = str(pd.to_datetime(merged_df.loc[idx, "Date"]).strftime("%Y-%m-%d"))
+            row_amt_val = float(merged_df.loc[idx, "Amount"])
+            row_sig = f"{row_date_str}|{row_name}|{round(row_amt_val, 2)}"
+
             if old_cat == "" and new_cat != "":
                 merged_df.loc[idx, "Category"] = new_cat
                 updated_list.append(row[COLS])
             elif old_cat != "" and new_cat != "" and old_cat != new_cat:
-                conflicts_list.append(
-                    {
-                        "_row_id": int(idx),
-                        "Date": str(
-                            pd.to_datetime(merged_df.loc[idx, "Date"]).strftime("%Y-%m-%d")
-                        ),
-                        "Date_Display": str(
-                            pd.to_datetime(merged_df.loc[idx, "Date"]).strftime("%d/%m/%Y")
-                        ),
-                        "Name": str(merged_df.loc[idx, "Name"]),
-                        "Amount": float(merged_df.loc[idx, "Amount"]),
-                        "current_category": old_cat,
-                        "incoming_category": new_cat,
-                    }
-                )
+                # Check if user already memorized/resolved this category conflict
+                if resolved_conflicts and resolved_conflicts.get(row_sig) == old_cat:
+                    pass
+                else:
+                    conflicts_list.append(
+                        {
+                            "_row_id": int(idx),
+                            "Date": row_date_str,
+                            "Date_Display": str(
+                                pd.to_datetime(merged_df.loc[idx, "Date"]).strftime("%d/%m/%Y")
+                            ),
+                            "Name": str(merged_df.loc[idx, "Name"]),
+                            "Amount": row_amt_val,
+                            "current_category": old_cat,
+                            "incoming_category": new_cat,
+                        }
+                    )
         else:
             new_list.append(row[COLS])
 

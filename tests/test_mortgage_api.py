@@ -110,6 +110,22 @@ def test_mortgage_overpayments_lifecycle(auth_client: TestClient):
 
     op_id = op_data["overpayments"][0]["id"]
 
+    # Edit overpayment: update amount from 1500 to 2000 -> balance becomes 178,000
+    put_res = auth_client.put(
+        f"/api/mortgage/overpayments/{op_id}?scope=Joint",
+        json={
+            "date": "2026-10-21",
+            "amount": 2000.0,
+            "type": "Lump Sum",
+            "notes": "Savings bonus updated",
+        },
+    )
+    assert put_res.status_code == 200
+    put_data = put_res.json()
+    assert put_data["profile"]["current_balance"] == 178000.0
+    assert put_data["overpayments"][0]["amount"] == 2000.0
+    assert put_data["overpayments"][0]["notes"] == "Savings bonus updated"
+
     # Delete overpayment
     del_res = auth_client.delete(f"/api/mortgage/overpayments/{op_id}?scope=Joint")
     assert del_res.status_code == 200

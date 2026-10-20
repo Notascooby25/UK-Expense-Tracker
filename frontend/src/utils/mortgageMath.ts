@@ -84,9 +84,24 @@ export function computeClientMortgageSummary(
   monthlyPayment: number,
   termMonths: number,
   monthlyOverpayment = 0,
-  lumpSum = 0
+  lumpSum = 0,
+  pastOverpayments = 0
 ): MortgageSummary {
+  const unadjustedPrincipal =
+    Math.round((principal + Math.max(0, pastOverpayments)) * 100) / 100;
+
+  // 1. Original Baseline schedule without past overpayments
   const baseline = simulateSchedule(
+    unadjustedPrincipal,
+    annualRatePct,
+    monthlyPayment,
+    termMonths,
+    0,
+    0
+  );
+
+  // 2. Current Actual schedule with past overpayments already deducted
+  const current = simulateSchedule(
     principal,
     annualRatePct,
     monthlyPayment,
@@ -95,6 +110,7 @@ export function computeClientMortgageSummary(
     0
   );
 
+  // 3. Accelerated schedule with future simulated overpayments
   const overpay = simulateSchedule(
     principal,
     annualRatePct,
@@ -105,25 +121,49 @@ export function computeClientMortgageSummary(
   );
 
   const baselineMonths = baseline.length;
+  const currentMonths = current.length;
   const overpayMonths = overpay.length;
-  const monthsSaved = Math.max(0, baselineMonths - overpayMonths);
 
-  const baselineInterest = baseline.length > 0 ? baseline[baseline.length - 1].total_interest_paid : 0;
-  const overpayInterest = overpay.length > 0 ? overpay[overpay.length - 1].total_interest_paid : 0;
-  const interestSaved = Math.max(0, Math.round((baselineInterest - overpayInterest) * 100) / 100);
+  const baselineInterest =
+    baseline.length > 0 ? baseline[baseline.length - 1].total_interest_paid : 0;
+  const currentInterest =
+    current.length > 0 ? current[current.length - 1].total_interest_paid : 0;
+  const overpayInterest =
+    overpay.length > 0 ? overpay[overpay.length - 1].total_interest_paid : 0;
+
+  const pastInterestSaved =
+    pastOverpayments > 0
+      ? Math.max(0, Math.round((baselineInterest - currentInterest) * 100) / 100)
+      : 0;
+  const pastMonthsSaved =
+    pastOverpayments > 0 ? Math.max(0, baselineMonths - currentMonths) : 0;
+
+  const simulatedInterestSaved = Math.max(
+    0,
+    Math.round((currentInterest - overpayInterest) * 100) / 100
+  );
+  const simulatedMonthsSaved = Math.max(0, currentMonths - overpayMonths);
+
+  const totalInterestSaved =
+    Math.round((pastInterestSaved + simulatedInterestSaved) * 100) / 100;
+  const totalMonthsSaved = pastMonthsSaved + simulatedMonthsSaved;
 
   const trajectory: MortgageTrajectoryPoint[] = [
     {
       year: 0,
       month: 0,
-      baseline_balance: Math.round(principal),
+      baseline_balance: Math.round(unadjustedPrincipal),
+      current_balance: Math.round(principal),
       overpay_balance: Math.round(principal),
     },
   ];
 
-  const maxDuration = Math.max(baselineMonths, overpayMonths);
+  const maxDuration = Math.max(baselineMonths, currentMonths, overpayMonths);
   const baselineLookup = new Map<number, number>();
   baseline.forEach((p) => baselineLookup.set(p.month, p.remaining_balance));
+
+  const currentLookup = new Map<number, number>();
+  current.forEach((p) => currentLookup.set(p.month, p.remaining_balance));
 
   const overpayLookup = new Map<number, number>();
   overpay.forEach((p) => overpayLookup.set(p.month, p.remaining_balance));
@@ -133,6 +173,11 @@ export function computeClientMortgageSummary(
     const bBal = baselineLookup.has(actualM)
       ? baselineLookup.get(actualM)!
       : actualM >= baselineMonths
+      ? 0
+      : unadjustedPrincipal;
+    const cBal = currentLookup.has(actualM)
+      ? currentLookup.get(actualM)!
+      : actualM >= currentMonths
       ? 0
       : principal;
     const oBal = overpayLookup.has(actualM)
@@ -145,6 +190,7 @@ export function computeClientMortgageSummary(
       year: Math.round((actualM / 12) * 10) / 10,
       month: actualM,
       baseline_balance: Math.round(bBal),
+      current_balance: Math.round(cBal),
       overpay_balance: Math.round(oBal),
     });
 
@@ -153,15 +199,23 @@ export function computeClientMortgageSummary(
 
   return {
     principal,
+    unadjusted_principal: unadjustedPrincipal,
     annual_rate_pct: annualRatePct,
     monthly_payment: monthlyPayment,
     baseline_months: baselineMonths,
+    current_months: currentMonths,
     overpay_months: overpayMonths,
-    months_saved: monthsSaved,
-    years_saved: Math.round((monthsSaved / 12) * 10) / 10,
+    past_overpayments: pastOverpayments,
+    past_interest_saved: pastInterestSaved,
+    past_months_saved: pastMonthsSaved,
+    simulated_interest_saved: simulatedInterestSaved,
+    simulated_months_saved: simulatedMonthsSaved,
+    months_saved: totalMonthsSaved,
+    years_saved: Math.round((totalMonthsSaved / 12) * 10) / 10,
     baseline_interest: baselineInterest,
+    current_interest: currentInterest,
     overpay_interest: overpayInterest,
-    interest_saved: interestSaved,
+    interest_saved: totalInterestSaved,
     trajectory,
   };
 }

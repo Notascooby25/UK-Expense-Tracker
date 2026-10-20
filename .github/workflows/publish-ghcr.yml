@@ -78,9 +78,22 @@ jobs:
     name: Deploy to NUC
     needs: publish
     runs-on: ubuntu-latest
-    if: ${{ secrets.NUC_HOST != '' && secrets.NUC_SSH_KEY != '' }}
     steps:
+      - name: Check SSH configuration
+        id: check_ssh
+        env:
+          NUC_HOST: ${{ secrets.NUC_HOST }}
+          NUC_KEY: ${{ secrets.NUC_SSH_KEY }}
+        run: |
+          if [ -n "$NUC_HOST" ] && [ -n "$NUC_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "NUC SSH secrets not configured, skipping deploy step."
+          fi
+
       - name: SSH to NUC and update containers
+        if: steps.check_ssh.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.NUC_HOST }}

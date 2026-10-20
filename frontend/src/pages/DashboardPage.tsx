@@ -835,7 +835,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               </label>
               <input
                 type="number"
-                step="50"
+                step="any"
                 placeholder={metrics.avg_income.toFixed(2)}
                 value={whatIfSalary}
                 onChange={(e) =>

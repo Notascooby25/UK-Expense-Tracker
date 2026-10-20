@@ -295,13 +295,19 @@ export const api = {
 
   resolveSyncConflicts(
     scope: AccountScope,
-    resolutions: Array<{ row_id: number; category: string }>
+    payload:
+      | {
+          resolutions: Array<{ row_id: number; category: string; name?: string; memorize?: boolean }>;
+          memorize_all?: boolean;
+        }
+      | Array<{ row_id: number; category: string; name?: string; memorize?: boolean }>
   ) {
+    const body = Array.isArray(payload) ? { resolutions: payload } : payload;
     return requestJson<{ saved: boolean; applied_count: number }>(
       `/api/sync/resolve-conflicts?scope=${encodeURIComponent(scope)}`,
       {
         method: 'POST',
-        body: JSON.stringify({ resolutions }),
+        body: JSON.stringify(body),
       }
     );
   },
@@ -469,6 +475,20 @@ export const api = {
       `/api/mortgage/overpayments?scope=${encodeURIComponent(scope)}`,
       {
         method: 'POST',
+        body: JSON.stringify(overpayment),
+      }
+    );
+  },
+
+  updateMortgageOverpayment(
+    scope: AccountScope,
+    overpaymentId: string,
+    overpayment: Partial<MortgageOverpayment>
+  ) {
+    return requestJson<{ profile: MortgageProfile | null; overpayments: MortgageOverpayment[] }>(
+      `/api/mortgage/overpayments/${encodeURIComponent(overpaymentId)}?scope=${encodeURIComponent(scope)}`,
+      {
+        method: 'PUT',
         body: JSON.stringify(overpayment),
       }
     );

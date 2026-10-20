@@ -118,9 +118,23 @@ def calculate_mortgage_summary(
     term_months: int,
     monthly_overpayment: float = 0.0,
     lump_sum: float = 0.0,
+    past_overpayments: float = 0.0,
 ) -> dict[str, Any]:
-    """Generate comparative summary between baseline and overpayment scenarios."""
+    """Generate comparative summary between baseline, current actual, and accelerated overpayment scenarios."""
+    unadjusted_principal = round(principal + max(0.0, past_overpayments), 2)
+
+    # 1. Original Baseline schedule without past overpayments
     baseline_schedule = generate_amortization_schedule(
+        principal=unadjusted_principal,
+        annual_rate_pct=annual_rate_pct,
+        monthly_payment=monthly_payment,
+        max_months=term_months,
+        monthly_overpayment=0.0,
+        lump_sum=0.0,
+    )
+
+    # 2. Current Actual schedule with past overpayments already applied
+    current_schedule = generate_amortization_schedule(
         principal=principal,
         annual_rate_pct=annual_rate_pct,
         monthly_payment=monthly_payment,
@@ -129,6 +143,7 @@ def calculate_mortgage_summary(
         lump_sum=0.0,
     )
 
+    # 3. Accelerated schedule with future simulated overpayments
     overpay_schedule = generate_amortization_schedule(
         principal=principal,
         annual_rate_pct=annual_rate_pct,
@@ -139,40 +154,57 @@ def calculate_mortgage_summary(
     )
 
     baseline_months = len(baseline_schedule)
+    current_months = len(current_schedule)
     overpay_months = len(overpay_schedule)
-    months_saved = max(0, baseline_months - overpay_months)
 
     baseline_interest = baseline_schedule[-1]["total_interest_paid"] if baseline_schedule else 0.0
+    current_interest = current_schedule[-1]["total_interest_paid"] if current_schedule else 0.0
     overpay_interest = overpay_schedule[-1]["total_interest_paid"] if overpay_schedule else 0.0
-    interest_saved = max(0.0, round(baseline_interest - overpay_interest, 2))
+
+    past_interest_saved = (
+        max(0.0, round(baseline_interest - current_interest, 2)) if past_overpayments > 0.0 else 0.0
+    )
+    past_months_saved = max(0, baseline_months - current_months) if past_overpayments > 0.0 else 0
+
+    simulated_interest_saved = max(0.0, round(current_interest - overpay_interest, 2))
+    simulated_months_saved = max(0, current_months - overpay_months)
+
+    total_interest_saved = round(past_interest_saved + simulated_interest_saved, 2)
+    total_months_saved = past_months_saved + simulated_months_saved
 
     # Build annual trajectory series for charting
     trajectory: list[dict[str, Any]] = []
-    max_duration = max(baseline_months, overpay_months)
+    max_duration = max(baseline_months, current_months, overpay_months)
 
     # Initial year 0 point
     trajectory.append(
         {
             "year": 0,
             "month": 0,
-            "baseline_balance": round(principal, 2),
+            "baseline_balance": round(unadjusted_principal, 2),
+            "current_balance": round(principal, 2),
             "overpay_balance": round(principal, 2),
         }
     )
 
     baseline_lookup = {item["month"]: item["remaining_balance"] for item in baseline_schedule}
+    current_lookup = {item["month"]: item["remaining_balance"] for item in current_schedule}
     overpay_lookup = {item["month"]: item["remaining_balance"] for item in overpay_schedule}
 
     # Sample yearly milestones (every 12 months)
     for m in range(12, max_duration + 12, 12):
         actual_m = min(m, max_duration)
-        b_bal = baseline_lookup.get(actual_m, 0.0 if actual_m >= baseline_months else principal)
+        b_bal = baseline_lookup.get(
+            actual_m, 0.0 if actual_m >= baseline_months else unadjusted_principal
+        )
+        c_bal = current_lookup.get(actual_m, 0.0 if actual_m >= current_months else principal)
         o_bal = overpay_lookup.get(actual_m, 0.0 if actual_m >= overpay_months else principal)
         trajectory.append(
             {
                 "year": round(actual_m / 12.0, 1),
                 "month": actual_m,
                 "baseline_balance": round(b_bal, 2),
+                "current_balance": round(c_bal, 2),
                 "overpay_balance": round(o_bal, 2),
             }
         )
@@ -181,15 +213,25 @@ def calculate_mortgage_summary(
 
     return {
         "principal": principal,
+        "unadjusted_principal": unadjusted_principal,
+        "past_overpayments": round(past_overpayments, 2),
         "annual_rate_pct": annual_rate_pct,
         "monthly_payment": monthly_payment,
         "baseline_months": baseline_months,
+        "current_months": current_months,
         "overpay_months": overpay_months,
-        "months_saved": months_saved,
-        "years_saved": round(months_saved / 12.0, 1),
+        "past_months_saved": past_months_saved,
+        "past_years_saved": round(past_months_saved / 12.0, 1),
+        "past_interest_saved": past_interest_saved,
+        "simulated_months_saved": simulated_months_saved,
+        "simulated_years_saved": round(simulated_months_saved / 12.0, 1),
+        "simulated_interest_saved": simulated_interest_saved,
+        "months_saved": total_months_saved,
+        "years_saved": round(total_months_saved / 12.0, 1),
         "baseline_interest": baseline_interest,
+        "current_interest": current_interest,
         "overpay_interest": overpay_interest,
-        "interest_saved": interest_saved,
+        "interest_saved": total_interest_saved,
         "trajectory": trajectory,
     }
 
