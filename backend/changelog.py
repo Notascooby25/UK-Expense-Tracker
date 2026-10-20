@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.7.1"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.7.1",
+        "date": "20 Oct 2026",
+        "title": "Mortgage Decimal Precision & Automated NUC Deployment",
+        "changes": [
+            "Fixed input field rounding in the mortgage tracker, allowing exact figures including pence for mortgage balances, monthly payments, interest rates, and overpayments.",
+            "Enhanced the remaining mortgage term selector to accept intuitive Years and Months side-by-side instead of requiring raw month counts.",
+            "Enabled direct typing of custom monthly overpayment figures into the simulator in addition to using the slider.",
+            "Added automated SSH deployment via GitHub Actions so pushing updates immediately rebuilds and redeploys containers on your NUC.",
+        ],
+    },
     {
         "version": "0.7.0",
         "date": "20 Oct 2026",

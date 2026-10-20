@@ -42,7 +42,8 @@ const formatCurrency = (val: number): string => {
   return new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency: 'GBP',
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(val);
 };
 
@@ -55,6 +56,16 @@ const formatCurrencyPrecise = (val: number): string => {
   }).format(val);
 };
 
+interface MortgageFormFields {
+  original_balance: string;
+  current_balance: string;
+  interest_rate: string;
+  monthly_payment: string;
+  remaining_term_months: number;
+  deal_expiry_date: string;
+  mortgage_type: string;
+}
+
 export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<MortgageDataResponse | null>(null);
@@ -63,15 +74,27 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
 
   // Profile Edit Modal State
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [profileForm, setProfileForm] = useState<MortgageProfile>({
-    original_balance: 240000,
-    current_balance: 214500,
-    interest_rate: 4.25,
-    monthly_payment: 1180,
+  const [profileForm, setProfileForm] = useState<MortgageFormFields>({
+    original_balance: '240000',
+    current_balance: '214500',
+    interest_rate: '4.25',
+    monthly_payment: '1180',
     remaining_term_months: 268,
     deal_expiry_date: '',
     mortgage_type: 'Fixed Rate',
   });
+
+  const setFormFromProfile = (p: MortgageProfile) => {
+    setProfileForm({
+      original_balance: p.original_balance.toString(),
+      current_balance: p.current_balance.toString(),
+      interest_rate: p.interest_rate.toString(),
+      monthly_payment: p.monthly_payment.toString(),
+      remaining_term_months: p.remaining_term_months,
+      deal_expiry_date: p.deal_expiry_date || '',
+      mortgage_type: p.mortgage_type || 'Fixed Rate',
+    });
+  };
 
   // Overpayment Log Modal State
   const [showOverpaymentModal, setShowOverpaymentModal] = useState(false);
@@ -79,13 +102,13 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
     const d = new Date();
     return d.toISOString().split('T')[0];
   });
-  const [overpayAmount, setOverpayAmount] = useState<number>(150);
+  const [overpayAmount, setOverpayAmount] = useState<string>('150.00');
   const [overpayType, setOverpayType] = useState<string>('Monthly');
   const [overpayNotes, setOverpayNotes] = useState<string>('');
 
   // Interactive Simulator State
   const [simMonthlyOverpay, setSimMonthlyOverpay] = useState<number>(100);
-  const [simLumpSum, setSimLumpSum] = useState<number>(0);
+  const [simLumpSum, setSimLumpSum] = useState<string>('');
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -99,7 +122,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
       const res = await api.getMortgage(scope);
       setData(res);
       if (res.profile) {
-        setProfileForm(res.profile);
+        setFormFromProfile(res.profile);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load mortgage data';
@@ -117,13 +140,22 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await api.saveMortgageProfile(scope, profileForm);
+      const payload: MortgageProfile = {
+        original_balance: parseFloat(profileForm.original_balance) || 0,
+        current_balance: parseFloat(profileForm.current_balance) || 0,
+        interest_rate: parseFloat(profileForm.interest_rate) || 0,
+        monthly_payment: parseFloat(profileForm.monthly_payment) || 0,
+        remaining_term_months: profileForm.remaining_term_months,
+        deal_expiry_date: profileForm.deal_expiry_date,
+        mortgage_type: profileForm.mortgage_type,
+      };
+      const res = await api.saveMortgageProfile(scope, payload);
       setData((prev) =>
         prev
           ? {
               ...prev,
               profile: res.profile,
-              annual_allowance: res.profile ? Math.round(res.profile.current_balance * 0.1) : 0,
+              annual_allowance: res.profile ? Math.round(res.profile.current_balance * 10) / 100 : 0,
             }
           : null
       );
@@ -139,17 +171,18 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
   // Handle Add Overpayment
   const handleAddOverpayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (overpayAmount <= 0) return;
+    const amt = parseFloat(overpayAmount);
+    if (isNaN(amt) || amt <= 0) return;
     try {
       await api.addMortgageOverpayment(scope, {
         date: overpayDate,
-        amount: Number(overpayAmount),
+        amount: amt,
         type: overpayType,
         notes: overpayNotes,
       });
       setShowOverpaymentModal(false);
       setOverpayNotes('');
-      showToast(`Logged overpayment of ${formatCurrencyPrecise(overpayAmount)}`);
+      showToast(`Logged overpayment of ${formatCurrencyPrecise(amt)}`);
       loadData();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to log overpayment';
@@ -277,7 +310,7 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
           {data?.profile && (
             <button
               onClick={() => {
-                setProfileForm(data.profile!);
+                setFormFromProfile(data.profile!);
                 setShowProfileModal(true);
               }}
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium border border-[#d6dfe5] dark:border-[#32424a] bg-white dark:bg-[#1b262c] text-[#121a21] dark:text-white hover:bg-gray-50 dark:hover:bg-[#263238] transition-colors"
@@ -416,16 +449,25 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                     <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                       Regular Monthly Overpayment
                     </label>
-                    <span className="text-base font-bold text-blue-600 dark:text-blue-400">
-                      +£{simMonthlyOverpay}/mo
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-blue-600 dark:text-blue-400 font-bold">+£</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={simMonthlyOverpay}
+                        onChange={(e) => setSimMonthlyOverpay(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="w-24 px-2 py-0.5 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded text-right tabular-nums"
+                      />
+                      <span className="text-xs text-blue-600 dark:text-blue-400 font-bold">/mo</span>
+                    </div>
                   </div>
                   <input
                     type="range"
                     min="0"
                     max="1000"
-                    step="25"
-                    value={simMonthlyOverpay}
+                    step="5"
+                    value={Math.min(1000, simMonthlyOverpay)}
                     onChange={(e) => setSimMonthlyOverpay(Number(e.target.value))}
                     className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
                   />
@@ -449,11 +491,11 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                     <input
                       type="number"
                       min="0"
-                      step="500"
-                      value={simLumpSum === 0 ? '' : simLumpSum}
-                      onChange={(e) => setSimLumpSum(Math.max(0, Number(e.target.value)))}
-                      placeholder="e.g. 2000"
-                      className="w-full pl-7 pr-3 py-1.5 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white"
+                      step="0.01"
+                      value={simLumpSum}
+                      onChange={(e) => setSimLumpSum(e.target.value)}
+                      placeholder="e.g. 2000.00"
+                      className="w-full pl-7 pr-3 py-1.5 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white tabular-nums"
                     />
                   </div>
                 </div>
@@ -695,13 +737,13 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   <input
                     type="number"
                     min="0"
-                    step="1000"
+                    step="0.01"
                     required
                     value={profileForm.original_balance}
                     onChange={(e) =>
-                      setProfileForm({ ...profileForm, original_balance: Number(e.target.value) })
+                      setProfileForm({ ...profileForm, original_balance: e.target.value })
                     }
-                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white"
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white tabular-nums"
                   />
                 </div>
 
@@ -712,13 +754,13 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   <input
                     type="number"
                     min="0"
-                    step="100"
+                    step="0.01"
                     required
                     value={profileForm.current_balance}
                     onChange={(e) =>
-                      setProfileForm({ ...profileForm, current_balance: Number(e.target.value) })
+                      setProfileForm({ ...profileForm, current_balance: e.target.value })
                     }
-                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white"
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white tabular-nums"
                   />
                 </div>
               </div>
@@ -731,13 +773,14 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   <input
                     type="number"
                     min="0"
+                    max="30"
                     step="0.01"
                     required
                     value={profileForm.interest_rate}
                     onChange={(e) =>
-                      setProfileForm({ ...profileForm, interest_rate: Number(e.target.value) })
+                      setProfileForm({ ...profileForm, interest_rate: e.target.value })
                     }
-                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white"
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white tabular-nums"
                   />
                 </div>
 
@@ -748,13 +791,13 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   <input
                     type="number"
                     min="0"
-                    step="1"
+                    step="0.01"
                     required
                     value={profileForm.monthly_payment}
                     onChange={(e) =>
-                      setProfileForm({ ...profileForm, monthly_payment: Number(e.target.value) })
+                      setProfileForm({ ...profileForm, monthly_payment: e.target.value })
                     }
-                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white"
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white tabular-nums"
                   />
                 </div>
               </div>
@@ -762,24 +805,50 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                    Remaining Term (Months)
+                    Remaining Term
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="600"
-                    required
-                    value={profileForm.remaining_term_months}
-                    onChange={(e) =>
-                      setProfileForm({
-                        ...profileForm,
-                        remaining_term_months: Math.max(1, Number(e.target.value)),
-                      })
-                    }
-                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white"
-                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        placeholder="Years"
+                        value={Math.floor(profileForm.remaining_term_months / 12) || ''}
+                        onChange={(e) => {
+                          const yrs = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          const remMonths = profileForm.remaining_term_months % 12;
+                          setProfileForm({
+                            ...profileForm,
+                            remaining_term_months: Math.max(1, yrs * 12 + remMonths),
+                          });
+                        }}
+                        className="w-full pl-3 pr-8 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white"
+                      />
+                      <span className="absolute right-2 top-2 text-xs text-gray-400">yrs</span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="11"
+                        placeholder="Months"
+                        value={profileForm.remaining_term_months % 12 || ''}
+                        onChange={(e) => {
+                          const mos = Math.max(0, Math.min(11, parseInt(e.target.value, 10) || 0));
+                          const yrs = Math.floor(profileForm.remaining_term_months / 12);
+                          setProfileForm({
+                            ...profileForm,
+                            remaining_term_months: Math.max(1, yrs * 12 + mos),
+                          });
+                        }}
+                        className="w-full pl-3 pr-8 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white"
+                      />
+                      <span className="absolute right-2 top-2 text-xs text-gray-400">mos</span>
+                    </div>
+                  </div>
                   <span className="text-[11px] text-gray-400">
-                    ~{Math.floor(profileForm.remaining_term_months / 12)} years {profileForm.remaining_term_months % 12} months
+                    Total: {profileForm.remaining_term_months} months
                   </span>
                 </div>
 
@@ -872,12 +941,12 @@ export const MortgagePage: React.FC<MortgagePageProps> = ({ scope }) => {
                   </label>
                   <input
                     type="number"
-                    min="1"
+                    min="0.01"
                     step="0.01"
                     required
                     value={overpayAmount}
-                    onChange={(e) => setOverpayAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white"
+                    onChange={(e) => setOverpayAmount(e.target.value)}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-[#263238] border border-[#d6dfe5] dark:border-[#32424a] text-[#121a21] dark:text-white tabular-nums"
                   />
                 </div>
 
