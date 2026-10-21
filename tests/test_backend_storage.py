@@ -22,6 +22,7 @@ from backend.storage import (
     save_filters,
     save_settings,
     save_transactions,
+    with_default_settings,
 )
 
 
@@ -387,3 +388,45 @@ def test_parse_and_merge_with_resolved_conflicts():
     assert new_rows.empty
     # Because it was in resolved_conflicts, no conflict prompt should be generated
     assert len(conflicts) == 0
+
+
+def test_auto_rule_does_not_match_wildcard_without_criteria():
+    """Verify rules lacking name_contains and notes_contains never match as universal wildcards."""
+    row = pd.Series({"Name": "Morrisons", "Notes": "weekly shop", "Amount": 55.0})
+    invalid_rules = [
+        {"category": "Concert/Theatre"},
+        {"name_contains": "", "notes_contains": "", "category": "Concert/Theatre"},
+        {"pattern": "", "category": "Concert/Theatre"},
+    ]
+    for rule in invalid_rules:
+        idx, matched = get_matching_auto_rule(row, [rule])
+        assert idx is None, f"Expected rule {rule} not to match, but matched index {idx}"
+        assert matched is None
+
+    # Test apply_auto_rules with invalid rule does not overwrite category
+    df = pd.DataFrame([{"Name": "Morrisons", "Notes": "", "Amount": 55.0, "Category": "Groceries"}])
+    res = apply_auto_rules(df, invalid_rules)
+    assert res.iloc[0]["Category"] == "Groceries"
+
+
+def test_with_default_settings_sanitizes_auto_rules():
+    """Verify with_default_settings migrates 'pattern' and purges empty catch-all rules."""
+    raw_settings = {
+        "auto_rules": [
+            {"pattern": "Morrisons", "category": "Groceries"},
+            {"category": "Concert/Theatre"},  # No criteria - must be removed
+            {
+                "name_contains": "",
+                "notes_contains": "",
+                "category": "CatchAll",
+            },  # Empty criteria - must be removed
+            {"name_contains": "ODEON", "category": "Entertainment"},
+        ]
+    }
+    cleaned = with_default_settings(raw_settings, "Personal")
+    rules = cleaned["auto_rules"]
+    assert len(rules) == 2
+    assert rules[0]["name_contains"] == "Morrisons"
+    assert rules[0]["category"] == "Groceries"
+    assert rules[1]["name_contains"] == "ODEON"
+    assert rules[1]["category"] == "Entertainment"

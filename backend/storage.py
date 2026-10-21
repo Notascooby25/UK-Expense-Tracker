@@ -241,6 +241,24 @@ def with_default_settings(settings: dict[str, Any] | None, scope: str) -> dict[s
             merged[list_key] = []
     if not isinstance(merged.get("committed_presets"), dict):
         merged["committed_presets"] = {}
+
+    sanitized_rules: list[dict[str, Any]] = []
+    for r in merged["auto_rules"]:
+        if not isinstance(r, dict):
+            continue
+        rule_dict = dict(r)
+        if "pattern" in rule_dict and not rule_dict.get("name_contains"):
+            rule_dict["name_contains"] = rule_dict.pop("pattern")
+        elif "pattern" in rule_dict:
+            rule_dict.pop("pattern", None)
+
+        name_c = clean_string(rule_dict.get("name_contains", ""))
+        notes_c = clean_string(rule_dict.get("notes_contains", ""))
+        if not name_c and not notes_c:
+            continue
+        sanitized_rules.append(rule_dict)
+    merged["auto_rules"] = sanitized_rules
+
     return merged
 
 
@@ -694,9 +712,16 @@ def get_matching_auto_rule(
     for idx, rule in enumerate(rules):
         if not isinstance(rule, dict):
             continue
-        if not rule_contains(row.get("Notes", ""), rule.get("notes_contains", "")):
+        name_pattern = clean_string(rule.get("name_contains") or rule.get("pattern", ""))
+        notes_pattern = clean_string(rule.get("notes_contains", ""))
+
+        # An auto-rule must have at least one criteria to match against
+        if not name_pattern and not notes_pattern:
             continue
-        if not rule_contains(row.get("Name", ""), rule.get("name_contains", "")):
+
+        if notes_pattern and not rule_contains(row.get("Notes", ""), notes_pattern):
+            continue
+        if name_pattern and not rule_contains(row.get("Name", ""), name_pattern):
             continue
 
         max_amt = rule.get("max_amount")
@@ -864,7 +889,7 @@ def parse_and_merge_import(
             except Exception:
                 p_amt = 0.0
 
-            if pd.isna(p_date) or p_amt <= 0.0:
+            if pd.isna(p_date) or p_amt <= 0.0 or not p_name:
                 continue
 
             p_date_norm = p_date.normalize()

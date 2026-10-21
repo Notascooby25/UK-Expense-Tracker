@@ -634,7 +634,7 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
                           onChange={(e) => setMemorizeConflicts(e.target.checked)}
                           className="rounded text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 border-amber-300 dark:border-amber-700"
                         />
-                        <span>Remember decisions for these transactions and merchants (skip future prompts)</span>
+                        <span>Remember decisions for these transactions (skip future prompts)</span>
                       </label>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">

@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
-from backend.storage import save_settings, save_transactions
+from backend.storage import load_settings, save_settings, save_transactions
 
 
 DUMMY_CRED = "secret123"  # pragma: allowlist secret
@@ -537,6 +537,18 @@ def test_resolve_sync_conflicts_endpoint(api_env):
     tx_after = client.get("/api/transactions?scope=Personal").json()
     row_after = next(r for r in tx_after["rows"] if r["row_id"] == target_row_id)
     assert row_after["Category"] == target_cat
+
+    # Verify signature was remembered in resolved_conflicts and auto_rules was not polluted
+    settings_after = load_settings("Personal")
+    row_date = row_after["Date"]
+    row_name = row_after["Name"]
+    row_amt = round(float(row_after["Amount"]), 2)
+    sig = f"{row_date}|{row_name}|{row_amt}"
+    assert sig in settings_after.get("resolved_conflicts", {})
+    assert settings_after["resolved_conflicts"][sig] == target_cat
+    # Ensure no empty/wildcard auto-rules were created
+    for r in settings_after.get("auto_rules", []):
+        assert r.get("name_contains") or r.get("notes_contains")
 
 
 def test_wealth_day_level_snapshots(api_env):

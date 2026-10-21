@@ -803,25 +803,6 @@ def resolve_sync_conflicts(
             sig = f"{row_date}|{row_name}|{row_amt}"
             settings["resolved_conflicts"][sig] = chosen_cat
 
-            # If user checked "memorize", add or update auto-rule for this merchant
-            if item.memorize or payload.memorize_all:
-                merchant_name = clean_string(item.name) or row_name
-                if merchant_name:
-                    existing_rule = next(
-                        (
-                            r
-                            for r in settings["auto_rules"]
-                            if str(r.get("pattern", "")).strip().lower() == merchant_name.lower()
-                        ),
-                        None,
-                    )
-                    if existing_rule:
-                        existing_rule["category"] = chosen_cat
-                    else:
-                        settings["auto_rules"].append(
-                            {"pattern": merchant_name, "category": chosen_cat}
-                        )
-
     if applied_count > 0:
         save_transactions(norm_scope, df)
         save_settings(norm_scope, settings)

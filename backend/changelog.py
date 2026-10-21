@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.7.3"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.7.3",
+        "date": "21 Oct 2026",
+        "title": "Fix Auto-Rule Wildcard Matching & Sync Categorisation Bug",
+        "changes": [
+            "Fixed critical sync issue where auto-rules without specific criteria acted as catch-all wildcards, erroneously overriding transaction categories to Concert/Theatre.",
+            "Added automatic sanitization for existing settings on startup to heal corrupted or criteria-less rules in settings.json.",
+            "Refined sync conflict resolution to remember specific transaction signatures without injecting broad global auto-rules.",
+            "Added safety checks preventing empty merchant names from triggering retrospective split replacements.",
+        ],
+    },
     {
         "version": "0.7.2",
         "date": "20 Oct 2026",
