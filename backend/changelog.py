@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.7.3"
+APP_VERSION = "0.7.4"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.7.4",
+        "date": "22 Oct 2026",
+        "title": "Restore Quiet Sync Flow & Fix Mobile Date Squashing",
+        "changes": [
+            "Reverted intrusive category conflict prompts during bank sync, restoring seamless and quiet imports where existing database categories are preserved as the trusted source of truth.",
+            "Fixed date column squashing on mobile and narrow browser viewports so dates are never truncated to '202'.",
+            "Added minimum column widths and non-wrapping table styling across all transaction tables.",
+        ],
+    },
     {
         "version": "0.7.3",
         "date": "21 Oct 2026",

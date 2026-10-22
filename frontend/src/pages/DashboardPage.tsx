@@ -1154,7 +1154,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   <table className="w-full text-xs text-left">
                     <thead className="bg-[#f4f6f8] dark:bg-[#263238] text-[#485b69] dark:text-[#b0bec5] border-b border-[#d6dfe5] dark:border-[#32424a]">
                       <tr>
-                        <th className="py-1.5 px-2.5">Date</th>
+                        <th className="py-1.5 px-2.5 whitespace-nowrap min-w-[95px]">Date</th>
                         <th className="py-1.5 px-2.5">Name</th>
                         <th className="py-1.5 px-2.5 text-right">Amount</th>
                         <th className="py-1.5 px-2.5">Category</th>

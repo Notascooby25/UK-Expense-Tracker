@@ -253,7 +253,7 @@ def test_parse_and_merge_hsbc_barclaycard_and_monzo_dedup():
     assert new_rows3.iloc[0]["Category"] == "Shopping"
 
 
-def test_parse_and_merge_preserves_existing_category_and_flags_conflict():
+def test_parse_and_merge_preserves_existing_category_silently():
     existing = pd.DataFrame(
         [
             {
@@ -282,13 +282,10 @@ def test_parse_and_merge_preserves_existing_category_and_flags_conflict():
     merged, new_rows, updated_rows, conflicts = parse_and_merge_import(
         existing, incoming_raw, rules=[], source_format="Monzo"
     )
-    # Existing category Groceries MUST be preserved in merged_df
+    # Existing category Groceries MUST be preserved silently without generating conflicts
     assert merged.loc[0, "Category"] == "Groceries"
     assert new_rows.empty
-    assert len(conflicts) == 1
-    assert conflicts[0]["_row_id"] == 0
-    assert conflicts[0]["current_category"] == "Groceries"
-    assert conflicts[0]["incoming_category"] == "Shopping"
+    assert len(conflicts) == 0
 
 
 def test_process_monzo_splits_with_currency_symbols():

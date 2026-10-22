@@ -738,7 +738,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                     className="rounded border-slate-600 bg-slate-800 text-cyan-600 focus:ring-0 cursor-pointer"
                   />
                 </th>
-                <th className="py-2.5 px-3 w-28">Date</th>
+                <th className="py-2.5 px-3 w-28 min-w-[110px] whitespace-nowrap">Date</th>
                 <th className="py-2.5 px-3 min-w-[180px]">Merchant / Name</th>
                 <th className="py-2.5 px-3 w-24 text-right">Amount (£)</th>
                 <th className="py-2.5 px-3 w-24">Type</th>
@@ -780,7 +780,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                       </td>
 
                       {/* Date */}
-                      <td className="py-2 px-3">
+                      <td className="py-2 px-3 min-w-[110px] whitespace-nowrap">
                         <input
                           type="text"
                           defaultValue={row.Date}
@@ -789,7 +789,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                               handleInlineChange(row.row_id, 'Date', e.target.value);
                             }
                           }}
-                          className="w-full bg-transparent border-b border-transparent hover:border-slate-600 focus:border-cyan-500 px-1 py-0.5 text-xs text-slate-300 font-mono focus:bg-[#263238] rounded-sm outline-none"
+                          className="w-full min-w-[95px] bg-transparent border-b border-transparent hover:border-slate-600 focus:border-cyan-500 px-1 py-0.5 text-xs text-slate-300 font-mono focus:bg-[#263238] rounded-sm outline-none"
                         />
                       </td>
 

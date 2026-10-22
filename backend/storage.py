@@ -938,24 +938,7 @@ def parse_and_merge_import(
             if old_cat == "" and new_cat != "":
                 merged_df.loc[idx, "Category"] = new_cat
                 updated_list.append(row[COLS])
-            elif old_cat != "" and new_cat != "" and old_cat != new_cat:
-                # Check if user already memorized/resolved this category conflict
-                if resolved_conflicts and resolved_conflicts.get(row_sig) == old_cat:
-                    pass
-                else:
-                    conflicts_list.append(
-                        {
-                            "_row_id": int(idx),
-                            "Date": row_date_str,
-                            "Date_Display": str(
-                                pd.to_datetime(merged_df.loc[idx, "Date"]).strftime("%d/%m/%Y")
-                            ),
-                            "Name": str(merged_df.loc[idx, "Name"]),
-                            "Amount": row_amt_val,
-                            "current_category": old_cat,
-                            "incoming_category": new_cat,
-                        }
-                    )
+            # If old_cat already exists, leave it completely untouched (database is source of truth)
         else:
             new_list.append(row[COLS])
 
