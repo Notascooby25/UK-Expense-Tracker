@@ -12,6 +12,7 @@ services:
       - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
     labels:
       - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=expense_tracker
     restart: unless-stopped
 
   expense-tracker-web:
@@ -27,17 +28,16 @@ services:
       - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
     labels:
       - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=expense_tracker
     restart: unless-stopped
 
   watchtower:
     image: containrrr/watchtower:latest
     container_name: watchtower_expense_tracker
-    command: --label-enable --cleanup --interval 300
+    command: --label-enable --cleanup --interval 300 --scope expense_tracker
     environment:
       - DOCKER_API_VERSION=1.40
-      - WATCHTOWER_SCOPE=none
-      - REPO_USER=${GHCR_USER}
-      - REPO_PASS=${GHCR_PAT}
+      - WATCHTOWER_SCOPE=expense_tracker
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
