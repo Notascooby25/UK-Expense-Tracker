@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Search,
   Download,
@@ -7,6 +7,7 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   CheckCircle2,
   RefreshCw,
   X,
@@ -49,7 +50,16 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [bank, setBank] = useState(
     initialFilters?.bank && initialFilters.bank !== 'All Banks' ? initialFilters.bank : 'All'
   );
-  const [category, setCategory] = useState(initialFilters?.category || 'All');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(() => {
+    if (initialFilters?.category && initialFilters.category !== 'All') {
+      return [initialFilters.category];
+    }
+    return [];
+  });
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+
   const [transactionType, setTransactionType] = useState('Both');
   const [financialYear, setFinancialYear] = useState(initialFilters?.financial_year || 'All');
   const [dateFrom, setDateFrom] = useState(initialFilters?.date_from || '');
@@ -82,10 +92,32 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const [bulkCategory, setBulkCategory] = useState('');
   const [bulkType, setBulkType] = useState('');
 
+  // Close category dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        categoryDropdownRef.current &&
+        !categoryDropdownRef.current.contains(event.target as Node)
+      ) {
+        setCategoryDropdownOpen(false);
+      }
+    };
+    if (categoryDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [categoryDropdownOpen]);
+
   // Synchronize initialFilters if passed from dashboard drill-down
   useEffect(() => {
     if (initialFilters) {
-      setCategory(initialFilters.category || 'All');
+      if (initialFilters.category && initialFilters.category !== 'All') {
+        setSelectedCategories([initialFilters.category]);
+      } else {
+        setSelectedCategories([]);
+      }
       setBank(
         initialFilters.bank && initialFilters.bank !== 'All Banks' ? initialFilters.bank : 'All'
       );
@@ -99,6 +131,39 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     }
   }, [initialFilters, onClearInitialFilters]);
 
+  const toggleCategory = (cat: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+    setCurrentPage(1);
+    setSelectedIds(new Set());
+  };
+
+  const selectAllCategories = () => {
+    const all = Array.from(new Set([...masterCategories, ...selectedCategories]));
+    setSelectedCategories(all);
+    setCurrentPage(1);
+    setSelectedIds(new Set());
+  };
+
+  const clearAllCategories = () => {
+    setSelectedCategories([]);
+    setCurrentPage(1);
+    setSelectedIds(new Set());
+  };
+
+  const allAvailableCategories = useMemo(() => {
+    const set = new Set(masterCategories);
+    selectedCategories.forEach((c) => set.add(c));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [masterCategories, selectedCategories]);
+
+  const filteredCategoriesList = useMemo(() => {
+    if (!categorySearchQuery.trim()) return allAvailableCategories;
+    const q = categorySearchQuery.toLowerCase();
+    return allAvailableCategories.filter((c) => c.toLowerCase().includes(q));
+  }, [allAvailableCategories, categorySearchQuery]);
+
   // Load transactions
   const loadTransactions = useCallback(async () => {
     setLoading(true);
@@ -109,7 +174,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
         search,
         notes,
         bank,
-        category,
+        category: 'All',
+        categories: selectedCategories,
         transaction_type: transactionType,
         financial_year: financialYear,
         date_from: dateFrom,
@@ -133,7 +199,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     search,
     notes,
     bank,
-    category,
+    selectedCategories,
     transactionType,
     financialYear,
     dateFrom,
@@ -156,7 +222,9 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     setSearch('');
     setNotes('');
     setBank('All');
-    setCategory('All');
+    setSelectedCategories([]);
+    setCategorySearchQuery('');
+    setCategoryDropdownOpen(false);
     setTransactionType('Both');
     setFinancialYear('All');
     setDateFrom('');
@@ -174,8 +242,11 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     const p = savedFilters[name];
     if (p.type !== undefined) setTransactionType(p.type);
     if (p.fy !== undefined) setFinancialYear(p.fy);
-    if (p.cats && p.cats.length > 0) setCategory(p.cats[0]);
-    else setCategory('All');
+    if (p.cats && Array.isArray(p.cats)) {
+      setSelectedCategories(p.cats);
+    } else {
+      setSelectedCategories([]);
+    }
     if (p.merchant !== undefined) setSearch(p.merchant);
     if (p.notes !== undefined) setNotes(p.notes);
     if (p.bank !== undefined) setBank(p.bank);
@@ -194,7 +265,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       [newPresetName.trim()]: {
         type: transactionType,
         fy: financialYear,
-        cats: category !== 'All' ? [category] : [],
+        cats: selectedCategories,
         merchant: search,
         notes: notes,
         bank: bank,
@@ -391,7 +462,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       search,
       notes,
       bank,
-      category,
+      category: 'All',
+      categories: selectedCategories,
       transaction_type: transactionType,
       financial_year: financialYear,
       date_from: dateFrom,
@@ -403,7 +475,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     search,
     notes,
     bank,
-    category,
+    selectedCategories,
     transactionType,
     financialYear,
     dateFrom,
@@ -552,23 +624,120 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
           </div>
 
           {/* Category */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-slate-400">Category</label>
-            <select
-              value={category}
-              onChange={(e) => handleFilterChange(setCategory, e.target.value)}
-              className="w-full px-2.5 py-1.5 text-xs bg-[#263238] border border-slate-700 rounded-md text-slate-200 focus:outline-none focus:border-cyan-500"
-            >
-              <option value="All">All Categories</option>
-              {category !== 'All' && !masterCategories.includes(category) && (
-                <option value={category}>{category}</option>
+          <div className="space-y-1 relative" ref={categoryDropdownRef}>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-medium text-slate-400">Category</label>
+              {selectedCategories.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAllCategories}
+                  className="text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors font-medium"
+                  title="Reset to All Categories"
+                >
+                  Clear
+                </button>
               )}
-              {masterCategories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCategoryDropdownOpen((prev) => !prev)}
+              className="w-full px-2.5 py-1.5 text-xs bg-[#263238] border border-slate-700 rounded-md text-slate-200 focus:outline-none focus:border-cyan-500 flex items-center justify-between gap-1.5 text-left transition-colors hover:border-slate-600"
+            >
+              <span className="truncate">
+                {selectedCategories.length === 0 ? (
+                  <span className="text-slate-300">All Categories</span>
+                ) : selectedCategories.length === 1 ? (
+                  <span className="text-slate-100">{selectedCategories[0]}</span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-slate-100">{selectedCategories.length} selected</span>
+                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-cyan-900/50 text-cyan-300 border border-cyan-700/50 font-medium">
+                      Multi
+                    </span>
+                  </span>
+                )}
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0 ${
+                  categoryDropdownOpen ? 'rotate-180 text-cyan-400' : ''
+                }`}
+              />
+            </button>
+
+            {categoryDropdownOpen && (
+              <div className="absolute left-0 top-full mt-1 w-64 bg-[#1e293b] border border-slate-700 rounded-lg shadow-2xl z-40 p-2.5 space-y-2">
+                {/* Search Box inside dropdown */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Search categories..."
+                    value={categorySearchQuery}
+                    onChange={(e) => setCategorySearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-7 py-1 text-xs bg-[#263238] border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-cyan-500 placeholder-slate-500"
+                    autoFocus
+                  />
+                  {categorySearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setCategorySearchQuery('')}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-200"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Actions */}
+                <div className="flex items-center justify-between text-[11px] pt-0.5 border-b border-slate-700/60 pb-1.5">
+                  <button
+                    type="button"
+                    onClick={selectAllCategories}
+                    className="text-cyan-400 hover:text-cyan-300 font-medium"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-slate-600">|</span>
+                  <button
+                    type="button"
+                    onClick={clearAllCategories}
+                    className="text-slate-400 hover:text-slate-200"
+                  >
+                    Clear (All Categories)
+                  </button>
+                </div>
+
+                {/* Categories List */}
+                <div className="max-h-52 overflow-y-auto space-y-0.5 pr-1 text-xs">
+                  {filteredCategoriesList.length === 0 ? (
+                    <div className="py-3 text-center text-slate-400 text-xs">No categories match</div>
+                  ) : (
+                    filteredCategoriesList.map((c) => {
+                      const isSelected = selectedCategories.includes(c);
+                      return (
+                        <label
+                          key={c}
+                          className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'bg-cyan-950/40 text-cyan-200'
+                              : 'hover:bg-slate-800 text-slate-300'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleCategory(c)}
+                            className="w-3.5 h-3.5 rounded border-slate-600 text-cyan-500 focus:ring-0 focus:ring-offset-0 bg-[#263238] cursor-pointer"
+                          />
+                          <span className="truncate flex-1">{c}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Transaction Type */}
@@ -629,6 +798,25 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
             </div>
           </div>
         </div>
+
+        {selectedCategories.length > 0 && (
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/40 text-xs text-cyan-300">
+            <span className="truncate">
+              Filtered to {selectedCategories.length}{' '}
+              {selectedCategories.length === 1 ? 'category' : 'categories'}:{' '}
+              <strong className="font-semibold">{selectedCategories.join(', ')}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={clearAllCategories}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex-shrink-0"
+              title="Clear category filter"
+            >
+              <X className="w-3 h-3" />
+              <span>Clear category filter</span>
+            </button>
+          </div>
+        )}
 
         {months.length > 0 && (
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/40 text-xs text-cyan-300">
