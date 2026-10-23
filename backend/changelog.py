@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.7.4"
+APP_VERSION = "0.7.5"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.7.5",
+        "date": "23 Oct 2026",
+        "title": "Bulk Selection & Multi-Delete for Auto-Rules",
+        "changes": [
+            "Added multi-select checkboxes to the Auto-Categorisation Rules table in Settings.",
+            "Added master 'Select All' checkbox in table header with indeterminate state support.",
+            "Added Shift+Click range selection: select one rule, hold Shift, and click another rule to select all rules in between.",
+            "Added bulk action bar with selected counter, 'Deselect All', and safety confirmation before deleting multiple rules.",
+        ],
+    },
     {
         "version": "0.7.4",
         "date": "22 Oct 2026",

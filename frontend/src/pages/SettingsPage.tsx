@@ -124,10 +124,77 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     await persistSettings({ auto_rules: updatedRules });
   };
 
+  // Multi-select rules state
+  const [selectedRuleIndices, setSelectedRuleIndices] = useState<Set<number>>(new Set());
+  const [lastSelectedRuleIndex, setLastSelectedRuleIndex] = useState<number | null>(null);
+
+  const handleToggleSelectRule = (index: number, event?: React.MouseEvent) => {
+    const isShift = Boolean(event?.shiftKey) && lastSelectedRuleIndex !== null;
+
+    setSelectedRuleIndices((prev) => {
+      const next = new Set(prev);
+      if (isShift && lastSelectedRuleIndex !== null) {
+        const start = Math.min(lastSelectedRuleIndex, index);
+        const end = Math.max(lastSelectedRuleIndex, index);
+        const shouldSelect = !prev.has(index);
+        for (let i = start; i <= end; i++) {
+          if (shouldSelect) {
+            next.add(i);
+          } else {
+            next.delete(i);
+          }
+        }
+      } else {
+        if (next.has(index)) {
+          next.delete(index);
+        } else {
+          next.add(index);
+        }
+      }
+      return next;
+    });
+
+    setLastSelectedRuleIndex(index);
+  };
+
+  const handleSelectAllRules = () => {
+    if (selectedRuleIndices.size === rules.length) {
+      setSelectedRuleIndices(new Set());
+      setLastSelectedRuleIndex(null);
+    } else {
+      setSelectedRuleIndices(new Set(rules.map((_, idx) => idx)));
+    }
+  };
+
+  const handleDeselectAllRules = () => {
+    setSelectedRuleIndices(new Set());
+    setLastSelectedRuleIndex(null);
+  };
+
+  const handleBulkDeleteRules = async () => {
+    const count = selectedRuleIndices.size;
+    if (count === 0) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${count} selected auto-rule${count === 1 ? '' : 's'}? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    const updatedRules = rules.filter((_, idx) => !selectedRuleIndices.has(idx));
+    setRules(updatedRules);
+    setSelectedRuleIndices(new Set());
+    setLastSelectedRuleIndex(null);
+    await persistSettings({ auto_rules: updatedRules });
+    triggerSaveStatus(`${count} rule${count === 1 ? '' : 's'} removed`);
+  };
+
   const handleDeleteRule = async (index: number) => {
     const updatedRules = rules.filter((_, idx) => idx !== index);
     setRules(updatedRules);
+    setSelectedRuleIndices(new Set());
+    setLastSelectedRuleIndex(null);
     await persistSettings({ auto_rules: updatedRules });
+    triggerSaveStatus('Rule removed');
   };
 
   const handleMoveRule = async (index: number, direction: 'up' | 'down') => {
@@ -141,6 +208,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     copy[targetIdx] = temp;
 
     setRules(copy);
+    setSelectedRuleIndices(new Set());
+    setLastSelectedRuleIndex(null);
     await persistSettings({ auto_rules: copy });
   };
 
@@ -413,16 +482,64 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
           {/* Current Rules Table */}
           <div className="bg-[#1b262c] border border-slate-700/50 rounded-lg overflow-hidden">
-            <div className="p-4 border-b border-slate-700/50">
-              <h2 className="text-sm font-semibold text-slate-100">
-                Active Rules ({rules.length})
-              </h2>
+            <div className="p-4 border-b border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <h2 className="text-sm font-semibold text-slate-100">
+                  Active Rules ({rules.length})
+                </h2>
+                {selectedRuleIndices.size > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-950/60 border border-cyan-700/60 text-cyan-300 text-xs font-medium">
+                    {selectedRuleIndices.size} selected
+                  </span>
+                )}
+              </div>
+
+              {selectedRuleIndices.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDeselectAllRules}
+                    className="px-2.5 py-1 rounded bg-[#263238] hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 transition-colors"
+                  >
+                    Deselect All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBulkDeleteRules}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-xs text-white font-medium shadow-sm transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Selected ({selectedRuleIndices.size})</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-[#263238]/80 text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-700/60">
                   <tr>
+                    <th className="py-2.5 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={rules.length > 0 && selectedRuleIndices.size === rules.length}
+                        ref={(el) => {
+                          if (el) {
+                            el.indeterminate =
+                              selectedRuleIndices.size > 0 &&
+                              selectedRuleIndices.size < rules.length;
+                          }
+                        }}
+                        onChange={handleSelectAllRules}
+                        disabled={rules.length === 0}
+                        className="rounded border-slate-600 bg-slate-800 text-cyan-600 focus:ring-0 cursor-pointer"
+                        title={
+                          selectedRuleIndices.size === rules.length
+                            ? 'Deselect all'
+                            : 'Select all'
+                        }
+                      />
+                    </th>
                     <th className="py-2.5 px-3 w-16 text-center">Priority</th>
                     <th className="py-2.5 px-3 min-w-[150px]">Merchant Contains</th>
                     <th className="py-2.5 px-3 min-w-[150px]">Notes Contains</th>
@@ -435,61 +552,78 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 <tbody className="divide-y divide-slate-800/60 font-mono">
                   {rules.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-500 font-sans text-xs">
+                      <td colSpan={8} className="py-8 text-center text-slate-500 font-sans text-xs">
                         No auto-rules created yet. Use the form above to add your first rule.
                       </td>
                     </tr>
                   ) : (
-                    rules.map((rule, idx) => (
-                      <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-2.5 px-3 text-center text-slate-400 font-semibold">
-                          #{idx + 1}
-                        </td>
-                        <td className="py-2.5 px-3 font-sans text-slate-200">
-                          {rule.name_contains || <span className="text-slate-500 italic">Any</span>}
-                        </td>
-                        <td className="py-2.5 px-3 font-sans text-slate-300">
-                          {rule.notes_contains || <span className="text-slate-500 italic">Any</span>}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-slate-300">
-                          {rule.max_amount > 0 ? `£${rule.max_amount.toFixed(2)}` : '∞'}
-                        </td>
-                        <td className="py-2.5 px-3 font-sans">
-                          <span className="px-2 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/50 text-cyan-300 text-xs">
-                            {rule.category}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-sans">
-                          <div className="flex items-center justify-center gap-1">
+                    rules.map((rule, idx) => {
+                      const isSelected = selectedRuleIndices.has(idx);
+                      return (
+                        <tr
+                          key={idx}
+                          className={`hover:bg-slate-800/40 transition-colors ${
+                            isSelected ? 'bg-cyan-950/25' : ''
+                          }`}
+                        >
+                          <td className="py-2.5 px-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onClick={(e) => handleToggleSelectRule(idx, e)}
+                              onChange={() => {}}
+                              className="rounded border-slate-600 bg-slate-800 text-cyan-600 focus:ring-0 cursor-pointer"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3 text-center text-slate-400 font-semibold">
+                            #{idx + 1}
+                          </td>
+                          <td className="py-2.5 px-3 font-sans text-slate-200">
+                            {rule.name_contains || <span className="text-slate-500 italic">Any</span>}
+                          </td>
+                          <td className="py-2.5 px-3 font-sans text-slate-300">
+                            {rule.notes_contains || <span className="text-slate-500 italic">Any</span>}
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-slate-300">
+                            {rule.max_amount > 0 ? `£${rule.max_amount.toFixed(2)}` : '∞'}
+                          </td>
+                          <td className="py-2.5 px-3 font-sans">
+                            <span className="px-2 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/50 text-cyan-300 text-xs">
+                              {rule.category}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-sans">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => handleMoveRule(idx, 'up')}
+                                disabled={idx === 0}
+                                className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors"
+                                title="Move Rule Up"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleMoveRule(idx, 'down')}
+                                disabled={idx === rules.length - 1}
+                                className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors"
+                                title="Move Rule Down"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
                             <button
-                              onClick={() => handleMoveRule(idx, 'up')}
-                              disabled={idx === 0}
-                              className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors"
-                              title="Move Rule Up"
+                              onClick={() => handleDeleteRule(idx)}
+                              className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                              title="Delete Rule"
                             >
-                              <ArrowUp className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              onClick={() => handleMoveRule(idx, 'down')}
-                              disabled={idx === rules.length - 1}
-                              className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors"
-                              title="Move Rule Down"
-                            >
-                              <ArrowDown className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <button
-                            onClick={() => handleDeleteRule(idx)}
-                            className="p-1 text-slate-500 hover:text-red-400 transition-colors"
-                            title="Delete Rule"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
