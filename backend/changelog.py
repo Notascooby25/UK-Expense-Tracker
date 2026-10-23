@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.7.5"
+APP_VERSION = "0.7.6"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.7.6",
+        "date": "23 Oct 2026",
+        "title": "Filter Presets Multi-Category Selection & Tax Return Support",
+        "changes": [
+            "Upgraded the Category filter on Transactions to a searchable multi-select checkbox dropdown with Select All and Clear All options.",
+            "Enabled filter presets to save and restore multiple selected categories alongside financial year filters (e.g. for self-assessment tax returns).",
+            "Added an active category filter chip showing currently selected categories with one-click clear.",
+            "Integrated multi-category filtering directly into transaction views and CSV exports.",
+        ],
+    },
     {
         "version": "0.7.5",
         "date": "23 Oct 2026",
