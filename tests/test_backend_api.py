@@ -431,6 +431,57 @@ def test_transactions_filter_by_date_range_and_months(api_env):
     assert "18/02/2026,Council Tax" not in r_exp_jan.text
 
 
+def test_transactions_multi_category_filter_and_preset_persistence(api_env):
+    """Verify /api/transactions and /api/filters support multiple categories in query and preset persistence."""
+    client = TestClient(app)
+    client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": DUMMY_CRED, "remember_me": False},
+    )
+
+    # 1. Multi-category query via categories=Bills,Groceries
+    r_multi = client.get("/api/transactions?scope=Personal&categories=Bills,Groceries")
+    assert r_multi.status_code == 200
+    data = r_multi.json()
+    assert data["total"] == 3  # 2 Bills (Council Tax Jan & Feb) + 1 Groceries (Tesco)
+    names = {r["Name"] for r in data["rows"]}
+    assert names == {"Council Tax", "Tesco"}
+
+    # 2. Multi-category CSV export
+    r_exp = client.get("/api/transactions/export?scope=Personal&categories=Bills,Groceries")
+    assert r_exp.status_code == 200
+    csv_text = r_exp.text
+    assert "Council Tax" in csv_text
+    assert "Tesco" in csv_text
+    assert "ACME Corp" not in csv_text
+    assert "Netflix" not in csv_text
+
+    # 3. Filter Presets save & load with multiple categories
+    preset_payload = {
+        "Tax Deductions 2025-2026": {
+            "fy": "2025-2026",
+            "type": "Expense",
+            "cats": ["Bills", "Groceries"],
+            "merchant": "",
+            "notes": "",
+            "bank": "All",
+        }
+    }
+    r_put = client.put("/api/filters?scope=Personal", json=preset_payload)
+    assert r_put.status_code == 200
+    put_data = r_put.json()
+    assert put_data["saved"] is True
+    assert "Tax Deductions 2025-2026" in put_data["saved_filters"]
+    assert put_data["saved_filters"]["Tax Deductions 2025-2026"]["cats"] == ["Bills", "Groceries"]
+
+    # Verify bootstrap returns the saved preset
+    r_boot = client.get("/api/bootstrap?scope=Personal")
+    assert r_boot.status_code == 200
+    boot_data = r_boot.json()
+    assert "Tax Deductions 2025-2026" in boot_data["saved_filters"]
+    assert boot_data["saved_filters"]["Tax Deductions 2025-2026"]["cats"] == ["Bills", "Groceries"]
+
+
 def test_version_and_changelog_exposed_in_auth_and_bootstrap(api_env):
     """Verify /api/auth/status and /api/bootstrap expose current APP_VERSION and changelog."""
     from backend.changelog import APP_VERSION, CHANGELOG
