@@ -114,6 +114,7 @@ COLS = [
     "Notes",
     "Financial_Year",
     "Is_Subscription",
+    "Is_Exceptional",
 ]
 
 
@@ -548,10 +549,11 @@ def load_data():
             if col in df.columns:
                 df[col] = df[col].fillna("").astype(str).apply(clean_string)
 
-        if "Is_Subscription" not in df.columns:
-            df["Is_Subscription"] = False
-        else:
-            df["Is_Subscription"] = df["Is_Subscription"].fillna(False).astype(bool)
+        for b_col in ("Is_Subscription", "Is_Exceptional"):
+            if b_col not in df.columns:
+                df[b_col] = False
+            else:
+                df[b_col] = df[b_col].fillna(False).astype(bool)
 
         st.session_state.df = df
     else:
@@ -689,7 +691,7 @@ def process_new_data(new_df, source_format="Auto-Detect"):
 
         for c in COLS:
             if c not in new_df.columns:
-                new_df[c] = ""
+                new_df[c] = False if c in {"Is_Subscription", "Is_Exceptional"} else ""
 
         new_df["Date"] = pd.to_datetime(
             new_df["Date"], dayfirst=True, errors="coerce"
@@ -1072,6 +1074,7 @@ table_format = {
     "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
     "Amount": st.column_config.NumberColumn("Amount", format="£%.2f"),
     "Is_Subscription": st.column_config.CheckboxColumn("Subscription?"),
+    "Is_Exceptional": st.column_config.CheckboxColumn("One-Off?"),
 }
 
 
@@ -1131,7 +1134,11 @@ if app_page == "📝 Add & Sync":
                 "Category", options=master_cats
             )
             editor_format["Notes"] = st.column_config.TextColumn("Notes")
-            disabled_cols = [c for c in COLS if c not in ["Category", "Notes", "Is_Subscription"]]
+            disabled_cols = [
+                c
+                for c in COLS
+                if c not in ["Category", "Notes", "Is_Subscription", "Is_Exceptional"]
+            ]
 
             edited_new_rows = st.data_editor(
                 st.session_state.new_sync_rows,

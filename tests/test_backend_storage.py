@@ -427,3 +427,39 @@ def test_with_default_settings_sanitizes_auto_rules():
     assert rules[0]["category"] == "Groceries"
     assert rules[1]["name_contains"] == "ODEON"
     assert rules[1]["category"] == "Entertainment"
+
+
+def test_is_exceptional_schema_backward_compatibility_and_roundtrip(tmp_path, monkeypatch):
+    """Verify Is_Exceptional defaults to False for legacy CSVs and persists accurately."""
+    from backend.storage import COLS, load_transactions, save_transactions
+
+    assert "Is_Exceptional" in COLS
+
+    # Simulate existing CSV without Is_Exceptional column
+    db_file = tmp_path / "expense_database.csv"
+    old_csv = (
+        "Date,Name,Amount,Transaction_Type,Bank,Category,Notes,Financial_Year,Is_Subscription\n"
+        "01/10/2026,Phone Replacement,599.00,Expense,Monzo,Shopping,Broken screen,2026/27,False\n"
+    )
+    db_file.write_text(old_csv, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "backend.storage.resolve_scope_paths",
+        lambda scope: {
+            "db": str(db_file),
+            "settings": str(tmp_path / "settings.json"),
+            "filters": str(tmp_path / "saved_filters.json"),
+            "assets": str(tmp_path / "assets.json"),
+        },
+    )
+
+    df = load_transactions("Personal")
+    assert "Is_Exceptional" in df.columns
+    assert df.loc[0, "Is_Exceptional"] == False
+
+    # Mark as exceptional and save
+    df.loc[0, "Is_Exceptional"] = True
+    save_transactions("Personal", df)
+
+    reloaded = load_transactions("Personal")
+    assert reloaded.loc[0, "Is_Exceptional"] == True

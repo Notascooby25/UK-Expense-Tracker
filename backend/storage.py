@@ -30,6 +30,7 @@ COLS = [
     "Notes",
     "Financial_Year",
     "Is_Subscription",
+    "Is_Exceptional",
 ]
 
 INTERNAL_CATEGORIES = [
@@ -91,13 +92,53 @@ SMART_SUBSCRIPTION_KEYWORDS = [
     "uber one",
 ]
 
+DEFAULT_DISCRETIONARY_TAXONOMIES: dict[str, list[str]] = {
+    "Coffee & Cafes": [
+        "coffee",
+        "cafe",
+        "costa",
+        "starbucks",
+        "pret",
+        "caffe",
+        "nero",
+        "gail",
+        "black sheep",
+    ],
+    "Takeaways & Fast Food": [
+        "deliveroo",
+        "just eat",
+        "ubereats",
+        "uber eats",
+        "mcdonald",
+        "kfc",
+        "greggs",
+        "domino",
+        "pizza",
+        "subway",
+        "burger king",
+        "nando",
+    ],
+    "Convenience & Snacks": [
+        "co-op",
+        "tesco express",
+        "sainsbury's local",
+        "sainsburys local",
+        "spar",
+        "whsmith",
+        "wh smith",
+        "boots",
+    ],
+}
+
 DEFAULT_SETTINGS: dict[str, Any] = {
     "ignore_suggestions": [],
     "ignore_recurring": [],
+    "ignore_exceptional_candidates": [],
     "custom_categories": [],
     "custom_banks": [],
     "committed_categories": [],
     "exceptional_categories": [],
+    "discretionary_leak_taxonomies": DEFAULT_DISCRETIONARY_TAXONOMIES,
     "committed_presets": {},
     "auto_rules": [],
     "monzo_sheet_url": "",
@@ -524,7 +565,7 @@ def load_transactions(scope: str) -> pd.DataFrame:
 
         for col in COLS:
             if col not in df.columns:
-                df[col] = False if col == "Is_Subscription" else ""
+                df[col] = False if col in {"Is_Subscription", "Is_Exceptional"} else ""
 
         df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.normalize()
         df = df.dropna(subset=["Date"]).copy()
@@ -540,20 +581,21 @@ def load_transactions(scope: str) -> pd.DataFrame:
                 calculate_uk_financial_year
             )
 
-        if "Is_Subscription" not in df.columns:
-            df["Is_Subscription"] = False
-        else:
-            df["Is_Subscription"] = (
-                df["Is_Subscription"]
-                .apply(
-                    lambda x: (
-                        str(x).strip().lower() in {"true", "1", "yes"}
-                        if not isinstance(x, bool)
-                        else x
+        for bool_col in ("Is_Subscription", "Is_Exceptional"):
+            if bool_col not in df.columns:
+                df[bool_col] = False
+            else:
+                df[bool_col] = (
+                    df[bool_col]
+                    .apply(
+                        lambda x: (
+                            str(x).strip().lower() in {"true", "1", "yes"}
+                            if not isinstance(x, bool)
+                            else x
+                        )
                     )
+                    .astype(bool)
                 )
-                .astype(bool)
-            )
 
         return df[COLS].reset_index(drop=True)
 
@@ -568,7 +610,7 @@ def save_transactions(scope: str, df: pd.DataFrame) -> None:
             export_df = df.copy()
             for col in COLS:
                 if col not in export_df.columns:
-                    export_df[col] = False if col == "Is_Subscription" else ""
+                    export_df[col] = False if col in {"Is_Subscription", "Is_Exceptional"} else ""
             export_df["Date"] = pd.to_datetime(export_df["Date"], errors="coerce").dt.normalize()
             export_df = export_df.dropna(subset=["Date"]).copy()
             export_df["Amount"] = (
@@ -578,6 +620,7 @@ def save_transactions(scope: str, df: pd.DataFrame) -> None:
                 export_df[col] = export_df[col].fillna("").astype(str).apply(clean_string)
             export_df["Financial_Year"] = export_df["Date"].apply(calculate_uk_financial_year)
             export_df["Is_Subscription"] = export_df["Is_Subscription"].fillna(False).astype(bool)
+            export_df["Is_Exceptional"] = export_df["Is_Exceptional"].fillna(False).astype(bool)
             export_df["Date"] = export_df["Date"].dt.strftime("%d/%m/%Y")
             export_df = export_df[COLS]
 
@@ -853,7 +896,7 @@ def parse_and_merge_import(
 
     for c in COLS:
         if c not in new_df.columns:
-            new_df[c] = False if c == "Is_Subscription" else ""
+            new_df[c] = False if c in {"Is_Subscription", "Is_Exceptional"} else ""
 
     new_df["Date"] = pd.to_datetime(new_df["Date"], dayfirst=True, errors="coerce").dt.normalize()
     new_df = new_df.dropna(subset=["Date"]).copy()
