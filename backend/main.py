@@ -239,6 +239,81 @@ def _serialize_tx_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
     return rows
 
 
+def _parse_list_param(raw: list[str] | str | None) -> list[str]:
+    """Parse list query parameters that might arrive as repeated params or comma-separated strings."""
+    if not raw:
+        return []
+    raw_list = [raw] if isinstance(raw, str) else raw
+    result: list[str] = []
+    for item in raw_list:
+        clean = item.strip()
+        if not clean:
+            continue
+        if "," in clean:
+            result.extend([p.strip() for p in clean.split(",") if p.strip()])
+        else:
+            result.append(clean)
+    return result
+
+
+def _parse_category_param(
+    raw_categories: list[str] | str | None,
+    master_categories: set[str] | None = None,
+) -> list[str]:
+    """Parse category query parameters while preserving category names that contain commas.
+
+    Supports:
+    - Repeated query parameters (e.g. ?categories=Coffee%2C+Drink+%26+Snacks&categories=Groceries)
+    - Master categories containing commas (e.g. 'Coffee, Drink & Snacks' remains intact)
+    - Legacy comma-separated strings (e.g. ?categories=Bills,Groceries)
+    """
+    if not raw_categories:
+        return []
+    raw_list = [raw_categories] if isinstance(raw_categories, str) else raw_categories
+    master = master_categories or set()
+    result: list[str] = []
+
+    for item in raw_list:
+        clean = item.strip()
+        if not clean:
+            continue
+        if clean in master:
+            result.append(clean)
+            continue
+        if "," in clean:
+            sorted_masters = sorted(master, key=len, reverse=True)
+            remaining = clean
+            matched: list[str] = []
+            while remaining:
+                found = False
+                for m in sorted_masters:
+                    if remaining == m:
+                        matched.append(m)
+                        remaining = ""
+                        found = True
+                        break
+                    elif remaining.startswith(m + ","):
+                        matched.append(m)
+                        remaining = remaining[len(m) + 1 :].strip()
+                        found = True
+                        break
+                if not found:
+                    if "," in remaining:
+                        part, remaining = remaining.split(",", 1)
+                        if part.strip():
+                            matched.append(part.strip())
+                        remaining = remaining.strip()
+                    else:
+                        if remaining.strip():
+                            matched.append(remaining.strip())
+                        remaining = ""
+            result.extend(matched)
+        else:
+            result.append(clean)
+
+    return result
+
+
 def _filter_transactions_df(
     df: pd.DataFrame,
     search: str = "",
@@ -380,14 +455,15 @@ def get_dashboard(
     net_spend_mode: bool = Query(False),
     ignore_legacy: bool = Query(True),
     exclude_exceptional: bool = Query(True),
-    months: str = Query(""),
-    include_categories: str = Query(""),
-    exclude_categories: str = Query(""),
+    months: list[str] = Query(default=[]),
+    include_categories: list[str] = Query(default=[]),
+    exclude_categories: list[str] = Query(default=[]),
     _user: str = Depends(require_auth),
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
     settings = load_settings(norm_scope)
+    master_cats = set(get_master_categories(df, settings))
     filters = {
         "time_mode": time_mode,
         "selected_period": selected_period,
@@ -396,9 +472,9 @@ def get_dashboard(
         "net_spend_mode": net_spend_mode,
         "ignore_legacy": ignore_legacy,
         "exclude_exceptional": exclude_exceptional,
-        "months": [m.strip() for m in months.split(",") if m.strip()],
-        "include_categories": [c.strip() for c in include_categories.split(",") if c.strip()],
-        "exclude_categories": [c.strip() for c in exclude_categories.split(",") if c.strip()],
+        "months": _parse_list_param(months),
+        "include_categories": _parse_category_param(include_categories, master_cats),
+        "exclude_categories": _parse_category_param(exclude_categories, master_cats),
     }
     return build_dashboard_data(df, settings, filters)
 
@@ -414,14 +490,15 @@ def get_dashboard_drilldown(
     net_spend_mode: bool = Query(False),
     ignore_legacy: bool = Query(True),
     exclude_exceptional: bool = Query(True),
-    months: str = Query(""),
-    include_categories: str = Query(""),
-    exclude_categories: str = Query(""),
+    months: list[str] = Query(default=[]),
+    include_categories: list[str] = Query(default=[]),
+    exclude_categories: list[str] = Query(default=[]),
     _user: str = Depends(require_auth),
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
     settings = load_settings(norm_scope)
+    master_cats = set(get_master_categories(df, settings))
     filters = {
         "time_mode": time_mode,
         "selected_period": selected_period,
@@ -430,9 +507,9 @@ def get_dashboard_drilldown(
         "net_spend_mode": net_spend_mode,
         "ignore_legacy": ignore_legacy,
         "exclude_exceptional": exclude_exceptional,
-        "months": [m.strip() for m in months.split(",") if m.strip()],
-        "include_categories": [c.strip() for c in include_categories.split(",") if c.strip()],
-        "exclude_categories": [c.strip() for c in exclude_categories.split(",") if c.strip()],
+        "months": _parse_list_param(months),
+        "include_categories": _parse_category_param(include_categories, master_cats),
+        "exclude_categories": _parse_category_param(exclude_categories, master_cats),
     }
     return build_category_drilldown(df, settings, filters, category)
 
@@ -445,20 +522,22 @@ def list_transactions(
     notes: str = Query(""),
     bank: str = Query("All"),
     category: str = Query("All"),
-    categories: str = Query(""),
+    categories: list[str] = Query(default=[]),
     transaction_type: str = Query("Both"),
     financial_year: str = Query("All"),
     date_from: str = Query(""),
     date_to: str = Query(""),
-    months: str = Query(""),
+    months: list[str] = Query(default=[]),
     limit: int = Query(100, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     _user: str = Depends(require_auth),
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
-    cat_list = [c.strip() for c in categories.split(",") if c.strip()]
-    month_list = [m.strip() for m in months.split(",") if m.strip()]
+    settings = load_settings(norm_scope)
+    master_cats = set(get_master_categories(df, settings))
+    cat_list = _parse_category_param(categories, master_cats)
+    month_list = _parse_list_param(months)
     filtered = _filter_transactions_df(
         df,
         search=search,
@@ -489,18 +568,20 @@ def export_transactions_csv(
     notes: str = Query(""),
     bank: str = Query("All"),
     category: str = Query("All"),
-    categories: str = Query(""),
+    categories: list[str] = Query(default=[]),
     transaction_type: str = Query("Both"),
     financial_year: str = Query("All"),
     date_from: str = Query(""),
     date_to: str = Query(""),
-    months: str = Query(""),
+    months: list[str] = Query(default=[]),
     _user: str = Depends(require_auth),
 ) -> StreamingResponse:
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
-    cat_list = [c.strip() for c in categories.split(",") if c.strip()]
-    month_list = [m.strip() for m in months.split(",") if m.strip()]
+    settings = load_settings(norm_scope)
+    master_cats = set(get_master_categories(df, settings))
+    cat_list = _parse_category_param(categories, master_cats)
+    month_list = _parse_list_param(months)
     filtered = _filter_transactions_df(
         df,
         search=search,

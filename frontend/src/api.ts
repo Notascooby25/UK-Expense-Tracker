@@ -94,10 +94,10 @@ export const api = {
       net_spend_mode: String(params.net_spend_mode),
       ignore_legacy: String(params.ignore_legacy),
       exclude_exceptional: String(params.exclude_exceptional ?? true),
-      months: params.months.join(','),
-      include_categories: params.include_categories.join(','),
-      exclude_categories: params.exclude_categories.join(','),
     });
+    (params.months || []).forEach((m) => q.append('months', m));
+    (params.include_categories || []).forEach((c) => q.append('include_categories', c));
+    (params.exclude_categories || []).forEach((c) => q.append('exclude_categories', c));
     return requestJson<DashboardPayload>(`/api/dashboard?${q.toString()}`);
   },
 
@@ -127,10 +127,10 @@ export const api = {
       net_spend_mode: String(params.net_spend_mode),
       ignore_legacy: String(params.ignore_legacy),
       exclude_exceptional: String(params.exclude_exceptional ?? true),
-      months: params.months.join(','),
-      include_categories: params.include_categories.join(','),
-      exclude_categories: params.exclude_categories.join(','),
     });
+    (params.months || []).forEach((m) => q.append('months', m));
+    (params.include_categories || []).forEach((c) => q.append('include_categories', c));
+    (params.exclude_categories || []).forEach((c) => q.append('exclude_categories', c));
     return requestJson<CategoryDrilldownPayload>(`/api/dashboard/drilldown?${q.toString()}`);
   },
 
@@ -157,15 +157,15 @@ export const api = {
       notes: params.notes || '',
       bank: params.bank || 'All',
       category: params.category || 'All',
-      categories: (params.categories || []).join(','),
       transaction_type: params.transaction_type || 'Both',
       financial_year: params.financial_year || 'All',
       date_from: params.date_from || '',
       date_to: params.date_to || '',
-      months: (params.months || []).join(','),
       limit: String(params.limit ?? 100),
       offset: String(params.offset ?? 0),
     });
+    (params.categories || []).forEach((c) => q.append('categories', c));
+    (params.months || []).forEach((m) => q.append('months', m));
     return requestJson<{
       total: number;
       offset: number;
@@ -195,13 +195,13 @@ export const api = {
       notes: params.notes || '',
       bank: params.bank || 'All',
       category: params.category || 'All',
-      categories: (params.categories || []).join(','),
       transaction_type: params.transaction_type || 'Both',
       financial_year: params.financial_year || 'All',
       date_from: params.date_from || '',
       date_to: params.date_to || '',
-      months: (params.months || []).join(','),
     });
+    (params.categories || []).forEach((c) => q.append('categories', c));
+    (params.months || []).forEach((m) => q.append('months', m));
     return `/api/transactions/export?${q.toString()}`;
   },
 

@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.7.6"
+APP_VERSION = "0.7.7"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.7.7",
+        "date": "24 Oct 2026",
+        "title": "Fix Category Filtering for Categories with Commas",
+        "changes": [
+            "Fixed transaction filtering and CSV exports failing to display transactions when selecting categories that contain commas (such as 'Coffee, Drink & Snacks').",
+            "Switched frontend API query parameter serialization to transmit list parameters individually instead of comma-joining them.",
+            "Enhanced backend query parser to intelligently recognize master categories and prevent splitting category names containing commas.",
+        ],
+    },
     {
         "version": "0.7.6",
         "date": "23 Oct 2026",

@@ -482,6 +482,60 @@ def test_transactions_multi_category_filter_and_preset_persistence(api_env):
     assert boot_data["saved_filters"]["Tax Deductions 2025-2026"]["cats"] == ["Bills", "Groceries"]
 
 
+def test_transactions_filter_category_with_commas(api_env):
+    """Verify filtering and export correctly match categories containing commas (e.g. 'Coffee, Drink & Snacks')."""
+    client = TestClient(app)
+    client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": DUMMY_CRED, "remember_me": False},
+    )
+
+    # 1. Create a transaction with a category containing a comma
+    create_resp = client.post(
+        "/api/transactions?scope=Personal",
+        json={
+            "Date": "2026-02-20",
+            "Name": "Costa Coffee",
+            "Amount": 4.50,
+            "Transaction_Type": "Expense",
+            "Bank": "Monzo",
+            "Category": "Coffee, Drink & Snacks",
+            "Notes": "Morning latte",
+            "Is_Subscription": False,
+        },
+    )
+    assert create_resp.status_code == 200
+
+    # 2. Query transactions using the category with a comma
+    r_cat = client.get(
+        "/api/transactions?scope=Personal&categories=Coffee%2C%20Drink%20%26%20Snacks"
+    )
+    assert r_cat.status_code == 200
+    data = r_cat.json()
+    assert data["total"] == 1
+    assert data["rows"][0]["Name"] == "Costa Coffee"
+    assert data["rows"][0]["Category"] == "Coffee, Drink & Snacks"
+
+    # 3. Export transactions using the category with a comma
+    r_exp = client.get(
+        "/api/transactions/export?scope=Personal&categories=Coffee%2C%20Drink%20%26%20Snacks"
+    )
+    assert r_exp.status_code == 200
+    assert "Costa Coffee" in r_exp.text
+    assert "Coffee, Drink & Snacks" in r_exp.text
+
+    # 4. Multi-category query combining comma category and normal category
+    r_multi = client.get(
+        "/api/transactions?scope=Personal&categories=Coffee%2C%20Drink%20%26%20Snacks&categories=Bills"
+    )
+    assert r_multi.status_code == 200
+    multi_data = r_multi.json()
+    assert multi_data["total"] == 3  # Costa Coffee + 2 Council Tax bills
+    names = {r["Name"] for r in multi_data["rows"]}
+    assert "Costa Coffee" in names
+    assert "Council Tax" in names
+
+
 def test_version_and_changelog_exposed_in_auth_and_bootstrap(api_env):
     """Verify /api/auth/status and /api/bootstrap expose current APP_VERSION and changelog."""
     from backend.changelog import APP_VERSION, CHANGELOG
