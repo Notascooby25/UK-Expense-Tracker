@@ -4,9 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.7.7"
+APP_VERSION = "0.8.0"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.8.0",
+        "date": "24 Oct 2026",
+        "title": "Automated Spend Rescuer & One-Off Spike Detection",
+        "changes": [
+            "Introduced automated Spend Helper with multi-year lookback horizon selector (2026, 2025, 2024, Last 6 Months, All Time).",
+            "Added Out-of-Character Spike Detector identifying rare or unusually large spends (e.g. broken phone replacements, DIY materials) with 1-click 'Mark as One-Off' and 'Keep Regular' actions.",
+            "Added Monthly Spend Rescuer identifying discretionary lifestyle habits (cafes, takeaways, convenience snacks) with exact 25% and 50% annual savings projections.",
+            "Added Category Creep warnings alerting when recent 3-month spending surges by >20% compared to 6-month historical baselines.",
+            "Added transaction-level One-Off tagging and filtering in Transactions editor with single-click toggle and floating bulk actions.",
+            "Linked Dashboard Excluded One-Off Spend banner directly to the Transactions editor for instant inspection.",
+            "Ensured full backwards compatibility with dual-app architecture across Streamlit and FastAPI storage layers.",
+        ],
+    },
     {
         "version": "0.7.7",
         "date": "24 Oct 2026",
