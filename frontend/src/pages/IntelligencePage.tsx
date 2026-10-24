@@ -293,15 +293,15 @@ export const IntelligencePage: React.FC<IntelligencePageProps> = ({
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-right font-bold text-amber-300">
-                      £{cand.amount.toFixed(2)}
+                      £{Number(cand.amount || 0).toFixed(2)}
                     </td>
                     <td className="py-2.5 px-3 font-sans text-[11px] text-slate-300">
-                      {cand.category_median > 0 ? (
+                      {Number(cand.category_median || 0) > 0 ? (
                         <span>
                           <strong className="text-amber-400">
-                            {(cand.amount / cand.category_median).toFixed(1)}x
+                            {(Number(cand.amount || 0) / Number(cand.category_median)).toFixed(1)}x
                           </strong>{' '}
-                          typical {cand.category} spend (median £{cand.category_median.toFixed(2)})
+                          typical {cand.category} spend (median £{Number(cand.category_median || 0).toFixed(2)})
                         </span>
                       ) : (
                         <span className="text-slate-400">
@@ -373,61 +373,64 @@ export const IntelligencePage: React.FC<IntelligencePageProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.spend_rescue_opportunities.map((opp) => (
-              <div
-                key={opp.habit}
-                className="bg-[#202d35] border border-slate-700/60 rounded-lg p-4 space-y-3 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-sm text-slate-100">{opp.habit}</h3>
-                    <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/50 text-emerald-300 font-mono font-medium">
-                      {opp.transaction_count} purchases
-                    </span>
+            {data.spend_rescue_opportunities.map((opp) => {
+              const merchantsList = opp.sample_merchants || opp.merchants || [];
+              return (
+                <div
+                  key={opp.habit}
+                  className="bg-[#202d35] border border-slate-700/60 rounded-lg p-4 space-y-3 flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-semibold text-sm text-slate-100">{opp.habit}</h3>
+                      <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/50 text-emerald-300 font-mono font-medium">
+                        {opp.transaction_count} purchases
+                      </span>
+                    </div>
+
+                    <div className="mt-2 text-xs text-slate-400">
+                      Spent in period:{' '}
+                      <strong className="text-slate-200 font-mono">
+                        £{Number(opp.total_spend || 0).toFixed(2)}
+                      </strong>
+                    </div>
+
+                    <div className="mt-1 text-xs text-slate-400">
+                      Projected annual run-rate:{' '}
+                      <strong className="text-amber-300 font-mono font-semibold">
+                        £{Number(opp.annual_projected || 0).toFixed(2)} / yr
+                      </strong>
+                    </div>
                   </div>
 
-                  <div className="mt-2 text-xs text-slate-400">
-                    Spent in period:{' '}
-                    <strong className="text-slate-200 font-mono">
-                      £{opp.total_spend.toFixed(2)}
-                    </strong>
-                  </div>
-
-                  <div className="mt-1 text-xs text-slate-400">
-                    Projected annual run-rate:{' '}
-                    <strong className="text-amber-300 font-mono font-semibold">
-                      £{opp.annual_projected.toFixed(2)} / yr
-                    </strong>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-700/50 space-y-2">
-                  <div className="text-[11px] font-semibold text-slate-300">Savings Potential:</div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 rounded bg-[#1b262c] border border-emerald-800/40">
-                      <div className="text-[10px] text-slate-400">Trim 25%</div>
-                      <div className="text-sm font-bold text-emerald-400 font-mono">
-                        +£{opp.annual_savings_25pct.toFixed(0)}
-                        <span className="text-[10px] font-normal text-slate-400">/yr</span>
+                  <div className="pt-3 border-t border-slate-700/50 space-y-2">
+                    <div className="text-[11px] font-semibold text-slate-300">Savings Potential:</div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="p-2 rounded bg-[#1b262c] border border-emerald-800/40">
+                        <div className="text-[10px] text-slate-400">Trim 25%</div>
+                        <div className="text-sm font-bold text-emerald-400 font-mono">
+                          +£{Number(opp.annual_savings_25pct || 0).toFixed(0)}
+                          <span className="text-[10px] font-normal text-slate-400">/yr</span>
+                        </div>
+                      </div>
+                      <div className="p-2 rounded bg-[#1b262c] border border-emerald-800/40">
+                        <div className="text-[10px] text-slate-400">Trim 50%</div>
+                        <div className="text-sm font-bold text-emerald-300 font-mono">
+                          +£{Number(opp.annual_savings_50pct || 0).toFixed(0)}
+                          <span className="text-[10px] font-normal text-slate-400">/yr</span>
+                        </div>
                       </div>
                     </div>
-                    <div className="p-2 rounded bg-[#1b262c] border border-emerald-800/40">
-                      <div className="text-[10px] text-slate-400">Trim 50%</div>
-                      <div className="text-sm font-bold text-emerald-300 font-mono">
-                        +£{opp.annual_savings_50pct.toFixed(0)}
-                        <span className="text-[10px] font-normal text-slate-400">/yr</span>
-                      </div>
-                    </div>
-                  </div>
 
-                  {opp.sample_merchants && opp.sample_merchants.length > 0 && (
-                    <div className="text-[10px] text-slate-400 truncate pt-1">
-                      Includes: {opp.sample_merchants.join(', ')}
-                    </div>
-                  )}
+                    {merchantsList.length > 0 && (
+                      <div className="text-[10px] text-slate-400 truncate pt-1">
+                        Includes: {merchantsList.join(', ')}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -470,27 +473,33 @@ export const IntelligencePage: React.FC<IntelligencePageProps> = ({
                   </td>
                 </tr>
               ) : (
-                data.category_creep_warnings.map((creep) => (
-                  <tr key={creep.category} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-2.5 px-3 font-semibold text-slate-100 font-sans">
-                      {creep.category}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-slate-400">
-                      £{creep.baseline_avg_monthly.toFixed(2)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-slate-200 font-medium">
-                      £{creep.recent_avg_monthly.toFixed(2)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-bold text-rose-400">
-                      +£{creep.monthly_increase.toFixed(2)}/mo
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-bold text-rose-400 font-sans">
-                      <span className="px-2 py-0.5 rounded bg-rose-950/50 border border-rose-800/60 text-xs">
-                        +{creep.pct_increase.toFixed(0)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                data.category_creep_warnings.map((creep) => {
+                  const baseVal = Number(creep.baseline_avg_monthly ?? creep.baseline_avg ?? 0);
+                  const recentVal = Number(creep.recent_avg_monthly ?? creep.recent_avg ?? 0);
+                  const incVal = Number(creep.monthly_increase ?? creep.diff ?? 0);
+                  const pctVal = Number(creep.pct_increase ?? 0);
+                  return (
+                    <tr key={creep.category} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-2.5 px-3 font-semibold text-slate-100 font-sans">
+                        {creep.category}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-400">
+                        £{baseVal.toFixed(2)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-200 font-medium">
+                        £{recentVal.toFixed(2)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-rose-400">
+                        +£{incVal.toFixed(2)}/mo
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-rose-400 font-sans">
+                        <span className="px-2 py-0.5 rounded bg-rose-950/50 border border-rose-800/60 text-xs">
+                          +{pctVal.toFixed(0)}%
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

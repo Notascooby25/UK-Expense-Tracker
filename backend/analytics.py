@@ -521,6 +521,7 @@ def build_intelligence_data(
     ignore_recurring = [str(x) for x in settings.get("ignore_recurring", [])]
     ignore_exceptional = set(settings.get("ignore_exceptional_candidates", []))
     committed_cats = set(settings.get("committed_categories", []))
+    exceptional_cats = set(settings.get("exceptional_categories", []))
     recurring_candidates: list[dict[str, Any]] = []
     one_off_candidates: list[dict[str, Any]] = []
 
@@ -549,6 +550,7 @@ def build_intelligence_data(
         all_var_mask = (
             all_exp_mask
             & (~df["Category"].isin(committed_cats))
+            & (~df["Category"].isin(exceptional_cats))
             & (~df["Category"].isin(INTERNAL_CATEGORIES))
         )
         if "Is_Exceptional" in df.columns:
@@ -567,6 +569,7 @@ def build_intelligence_data(
         var_mask = (
             exp_mask
             & (~df_scope["Category"].isin(committed_cats))
+            & (~df_scope["Category"].isin(exceptional_cats))
             & (~df_scope["Category"].isin(INTERNAL_CATEGORIES))
         )
         if "Is_Exceptional" in df_scope.columns:
@@ -586,6 +589,7 @@ def build_intelligence_data(
                 if is_spike:
                     row_date = pd.to_datetime(r["Date"])
                     row_name = clean_string(r.get("Name", ""))
+                    row_notes = clean_string(r.get("Notes", ""))
                     sig = f"{row_date.strftime('%Y-%m-%d')}|{row_name}|{row_amt:.2f}"
                     if sig not in ignore_exceptional:
                         one_off_candidates.append(
@@ -596,6 +600,8 @@ def build_intelligence_data(
                                 "name": row_name,
                                 "amount": row_amt,
                                 "category": cat,
+                                "notes": row_notes,
+                                "category_median": round(cat_med, 2) if cat_cnt >= 3 else 0.0,
                                 "bank": clean_string(r.get("Bank", "")),
                                 "signature": sig,
                                 "reason": f"£{row_amt:.2f} is significantly higher than typical for {cat}",
@@ -715,6 +721,7 @@ def build_intelligence_data(
         df_scope_var = df_scope[
             (df_scope["Transaction_Type"] == "Expense")
             & (~df_scope["Category"].isin(committed_cats))
+            & (~df_scope["Category"].isin(exceptional_cats))
             & (~df_scope["Category"].isin(INTERNAL_CATEGORIES))
         ]
         if "Is_Exceptional" in df_scope_var.columns:
@@ -747,6 +754,7 @@ def build_intelligence_data(
                 total_spend = round(float(matching["Amount"].sum()), 2)
                 monthly_avg = round(total_spend / span_months, 2)
                 annual_proj = round(monthly_avg * 12, 2)
+                unique_merchants = sorted(list(matching["Name"].dropna().unique()))
                 spend_rescue_opportunities.append(
                     {
                         "habit": habit_name,
@@ -756,7 +764,8 @@ def build_intelligence_data(
                         "annual_projected": annual_proj,
                         "annual_savings_25pct": round(annual_proj * 0.25, 2),
                         "annual_savings_50pct": round(annual_proj * 0.50, 2),
-                        "merchants": sorted(list(matching["Name"].dropna().unique())),
+                        "merchants": unique_merchants,
+                        "sample_merchants": unique_merchants[:5],
                     }
                 )
         spend_rescue_opportunities.sort(key=lambda x: x["total_spend"], reverse=True)
@@ -767,6 +776,7 @@ def build_intelligence_data(
         df_all_var_copy = df[
             (df["Transaction_Type"] == "Expense")
             & (~df["Category"].isin(committed_cats))
+            & (~df["Category"].isin(exceptional_cats))
             & (~df["Category"].isin(INTERNAL_CATEGORIES))
         ].copy()
         if "Is_Exceptional" in df_all_var_copy.columns:
@@ -805,12 +815,18 @@ def build_intelligence_data(
                         if base_avg > 0 and diff >= 50.0:
                             pct_inc = round((diff / base_avg) * 100, 1)
                             if pct_inc >= 20.0:
+                                base_rounded = round(base_avg, 2)
+                                rec_rounded = round(rec_avg, 2)
+                                diff_rounded = round(diff, 2)
                                 category_creep_warnings.append(
                                     {
                                         "category": cat_str,
-                                        "baseline_avg": round(base_avg, 2),
-                                        "recent_avg": round(rec_avg, 2),
-                                        "diff": round(diff, 2),
+                                        "baseline_avg": base_rounded,
+                                        "recent_avg": rec_rounded,
+                                        "diff": diff_rounded,
+                                        "baseline_avg_monthly": base_rounded,
+                                        "recent_avg_monthly": rec_rounded,
+                                        "monthly_increase": diff_rounded,
                                         "pct_increase": pct_inc,
                                     }
                                 )

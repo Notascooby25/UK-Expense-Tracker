@@ -199,7 +199,11 @@ def test_spike_detection_with_time_horizon_and_dismissal_signature():
     assert candidates_2026[0]["amount"] == 650.00
 
     # 2. Dismissing Apple Store with signature suppresses it
-    apple_sig = candidates_2026[0]["signature"]
+    apple_cand = candidates_2026[0]
+    assert "category_median" in apple_cand
+    assert "notes" in apple_cand
+    assert isinstance(apple_cand["category_median"], float)
+    apple_sig = apple_cand["signature"]
     settings_dismissed = {"ignore_exceptional_candidates": [apple_sig]}
     intel_dismissed = build_intelligence_data(df, settings_dismissed, horizon="2026")
     assert len(intel_dismissed["one_off_candidates"]) == 0
@@ -275,7 +279,13 @@ def test_spend_rescuer_lifestyle_habits_and_category_creep():
     assert coffee_habit["transaction_count"] == 12
     assert coffee_habit["annual_projected"] > 0
     assert coffee_habit["annual_savings_50pct"] > 0
+    assert "sample_merchants" in coffee_habit
+    assert "Pret A Manger" in coffee_habit["sample_merchants"]
 
-    # 2. Groceries should trigger creep alert
+    # 2. Groceries should trigger creep alert with frontend keys
     creep = intel["category_creep_warnings"]
-    assert any(c["category"] == "Groceries" for c in creep)
+    groc_creep = next(c for c in creep if c["category"] == "Groceries")
+    assert groc_creep["baseline_avg_monthly"] == 200.0
+    assert groc_creep["recent_avg_monthly"] == 450.0
+    assert groc_creep["monthly_increase"] == 250.0
+    assert groc_creep["pct_increase"] == 125.0

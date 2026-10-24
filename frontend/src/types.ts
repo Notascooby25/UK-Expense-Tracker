@@ -191,6 +191,7 @@ export interface SpendRescueOpportunity {
   annual_savings_25pct: number;
   annual_savings_50pct: number;
   sample_merchants: string[];
+  merchants?: string[];
 }
 
 export interface CategoryCreepWarning {
@@ -199,6 +200,9 @@ export interface CategoryCreepWarning {
   recent_avg_monthly: number;
   monthly_increase: number;
   pct_increase: number;
+  baseline_avg?: number;
+  recent_avg?: number;
+  diff?: number;
 }
 
 export interface IntelligencePayload {

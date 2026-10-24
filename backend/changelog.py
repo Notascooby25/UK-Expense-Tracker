@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.8.1"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.8.1",
+        "date": "24 Oct 2026",
+        "title": "Fix Intelligence Page Blank Screen on Category Creep & Spike Cards",
+        "changes": [
+            "Fixed a blank-screen crash on the Intelligence page caused by field name mismatches between the backend Category Creep payload and the frontend table renderer.",
+            "Added category median and transaction notes fields to One-Off Spike candidates and sample merchant lists to Spend Rescuer cards.",
+            "Added defensive numeric fallbacks across all Intelligence tables and excluded categories already marked as Exceptional in Settings from redundant spike and creep alerts.",
+        ],
+    },
     {
         "version": "0.8.0",
         "date": "24 Oct 2026",
