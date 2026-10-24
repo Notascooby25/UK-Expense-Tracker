@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import difflib
+import re
 from typing import Any
 
 import pandas as pd
 
 from backend.storage import (
+    DEFAULT_DISCRETIONARY_TAXONOMIES,
     INTERNAL_CATEGORIES,
     SMART_SUBSCRIPTION_KEYWORDS,
     TRUE_INCOME_CATEGORIES,
@@ -706,8 +708,118 @@ def build_intelligence_data(
                             }
                         )
 
+    # 4. Spend Rescuer: Habit Groupings (Discretionary Leaks)
+    spend_rescue_opportunities: list[dict[str, Any]] = []
+    taxonomies = settings.get("discretionary_leak_taxonomies", DEFAULT_DISCRETIONARY_TAXONOMIES)
+    if not df_scope.empty and isinstance(taxonomies, dict):
+        df_scope_var = df_scope[
+            (df_scope["Transaction_Type"] == "Expense")
+            & (~df_scope["Category"].isin(committed_cats))
+            & (~df_scope["Category"].isin(INTERNAL_CATEGORIES))
+        ]
+        if "Is_Exceptional" in df_scope_var.columns:
+            df_scope_var = df_scope_var[~df_scope_var["Is_Exceptional"].fillna(False).astype(bool)]
+
+        span_months = max(
+            1, df_scope_var["Date"].dt.to_period("M").nunique() if not df_scope_var.empty else 1
+        )
+
+        for habit_name, keywords in taxonomies.items():
+            if not isinstance(keywords, list) or not keywords or df_scope_var.empty:
+                continue
+            kw_clean = [str(k).lower().strip() for k in keywords if str(k).strip()]
+            if not kw_clean:
+                continue
+
+            name_lower = df_scope_var["Name"].astype(str).str.lower()
+            notes_lower = df_scope_var["Notes"].astype(str).str.lower()
+            mask = pd.Series(False, index=df_scope_var.index)
+            for kw in kw_clean:
+                mask = (
+                    mask
+                    | name_lower.str.contains(re.escape(kw), regex=True)
+                    | notes_lower.str.contains(re.escape(kw), regex=True)
+                )
+
+            matching = df_scope_var[mask]
+            # Habit qualification threshold: at least 3 transactions
+            if len(matching) >= 3:
+                total_spend = round(float(matching["Amount"].sum()), 2)
+                monthly_avg = round(total_spend / span_months, 2)
+                annual_proj = round(monthly_avg * 12, 2)
+                spend_rescue_opportunities.append(
+                    {
+                        "habit": habit_name,
+                        "transaction_count": int(len(matching)),
+                        "total_spend": total_spend,
+                        "monthly_avg": monthly_avg,
+                        "annual_projected": annual_proj,
+                        "annual_savings_25pct": round(annual_proj * 0.25, 2),
+                        "annual_savings_50pct": round(annual_proj * 0.50, 2),
+                        "merchants": sorted(list(matching["Name"].dropna().unique())),
+                    }
+                )
+        spend_rescue_opportunities.sort(key=lambda x: x["total_spend"], reverse=True)
+
+    # 5. Category Creep Warnings (Recent 3 completed months vs Preceding 6-month baseline)
+    category_creep_warnings: list[dict[str, Any]] = []
+    if not df.empty:
+        df_all_var_copy = df[
+            (df["Transaction_Type"] == "Expense")
+            & (~df["Category"].isin(committed_cats))
+            & (~df["Category"].isin(INTERNAL_CATEGORIES))
+        ].copy()
+        if "Is_Exceptional" in df_all_var_copy.columns:
+            df_all_var_copy = df_all_var_copy[
+                ~df_all_var_copy["Is_Exceptional"].fillna(False).astype(bool)
+            ]
+
+        if not df_all_var_copy.empty:
+            df_all_var_copy["Month_Period"] = pd.to_datetime(df_all_var_copy["Date"]).dt.to_period(
+                "M"
+            )
+            all_unique_periods = sorted(list(df_all_var_copy["Month_Period"].unique()))
+            if len(all_unique_periods) >= 2:
+                recent_periods = (
+                    all_unique_periods[-3:]
+                    if len(all_unique_periods) >= 3
+                    else all_unique_periods[-1:]
+                )
+                baseline_periods = all_unique_periods[: -len(recent_periods)]
+                if len(baseline_periods) > 6:
+                    baseline_periods = baseline_periods[-6:]
+
+                if baseline_periods:
+                    for cat_name, grp in df_all_var_copy.groupby("Category"):
+                        cat_str = str(cat_name)
+                        rec_spend = float(
+                            grp[grp["Month_Period"].isin(recent_periods)]["Amount"].sum()
+                        )
+                        base_spend = float(
+                            grp[grp["Month_Period"].isin(baseline_periods)]["Amount"].sum()
+                        )
+
+                        rec_avg = rec_spend / max(1, len(recent_periods))
+                        base_avg = base_spend / max(1, len(baseline_periods))
+                        diff = rec_avg - base_avg
+                        if base_avg > 0 and diff >= 50.0:
+                            pct_inc = round((diff / base_avg) * 100, 1)
+                            if pct_inc >= 20.0:
+                                category_creep_warnings.append(
+                                    {
+                                        "category": cat_str,
+                                        "baseline_avg": round(base_avg, 2),
+                                        "recent_avg": round(rec_avg, 2),
+                                        "diff": round(diff, 2),
+                                        "pct_increase": pct_inc,
+                                    }
+                                )
+                    category_creep_warnings.sort(key=lambda x: x["diff"], reverse=True)
+
     return {
         "one_off_candidates": one_off_candidates,
+        "spend_rescue_opportunities": spend_rescue_opportunities,
+        "category_creep_warnings": category_creep_warnings,
         "recurring_candidates": recurring_candidates,
         "ignored_recurring": sorted(ignore_recurring),
         "subscription_candidates": subscription_candidates,

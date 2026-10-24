@@ -207,3 +207,75 @@ def test_spike_detection_with_time_horizon_and_dismissal_signature():
     # 3. Horizon 2025 catches the B&Q spike
     intel_2025 = build_intelligence_data(df, settings, horizon="2025")
     assert any(c["name"] == "B&Q" for c in intel_2025["one_off_candidates"])
+
+
+def test_spend_rescuer_lifestyle_habits_and_category_creep():
+    """Verify Spend Rescuer identifies repeat lifestyle habits and category creep."""
+    from backend.analytics import build_intelligence_data
+
+    # Multiple small coffees across 3 months
+    rows = []
+    for m in [8, 9, 10]:
+        for d in [5, 12, 19, 26]:
+            rows.append(
+                {
+                    "Date": pd.Timestamp(f"2026-{m:02d}-{d:02d}"),
+                    "Name": "Pret A Manger",
+                    "Amount": 4.25,
+                    "Transaction_Type": "Expense",
+                    "Bank": "Monzo",
+                    "Category": "Dining Out",
+                    "Notes": "",
+                    "Financial_Year": "2026/27",
+                    "Is_Subscription": False,
+                    "Is_Exceptional": False,
+                }
+            )
+
+    # Category creep in Groceries: 6-month baseline ~£200/mo (Jan-Jun), recent 3 months ~£450/mo (Aug-Oct)
+    for m in range(1, 7):
+        rows.append(
+            {
+                "Date": pd.Timestamp(f"2026-{m:02d}-15"),
+                "Name": "Tesco",
+                "Amount": 200.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Groceries",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            }
+        )
+    for m in [8, 9, 10]:
+        rows.append(
+            {
+                "Date": pd.Timestamp(f"2026-{m:02d}-15"),
+                "Name": "Tesco",
+                "Amount": 450.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Groceries",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    settings = {}
+    intel = build_intelligence_data(df, settings, horizon="2026")
+
+    # 1. Pret should be recognized under Coffee & Cafes
+    habits = intel["spend_rescue_opportunities"]
+    assert len(habits) >= 1
+    coffee_habit = next(h for h in habits if h["habit"] == "Coffee & Cafes")
+    assert coffee_habit["transaction_count"] == 12
+    assert coffee_habit["annual_projected"] > 0
+    assert coffee_habit["annual_savings_50pct"] > 0
+
+    # 2. Groceries should trigger creep alert
+    creep = intel["category_creep_warnings"]
+    assert any(c["category"] == "Groceries" for c in creep)
