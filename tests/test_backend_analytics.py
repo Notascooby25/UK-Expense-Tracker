@@ -62,3 +62,56 @@ def test_build_wealth_data_forward_fills_timeline():
     assert timeline[2]["assets"] == 12000.0
     assert timeline[2]["debts"] == 4850.0
     assert timeline[2]["total"] == 7150.0
+
+
+def test_dashboard_excludes_individual_exceptional_transactions():
+    """Verify individual Is_Exceptional transactions are excluded from dashboard and tracked in summary."""
+    from backend.analytics import prepare_filtered_dashboard_df
+
+    df = pd.DataFrame(
+        [
+            {
+                "Date": pd.Timestamp("2026-10-05"),
+                "Name": "Pret A Manger",
+                "Amount": 4.50,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Dining Out",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            {
+                "Date": pd.Timestamp("2026-10-10"),
+                "Name": "Apple Store",
+                "Amount": 799.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "Replacement phone",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": True,
+            },
+        ]
+    )
+
+    settings = {"exceptional_categories": [], "committed_categories": []}
+    filters = {
+        "exclude_exceptional": True,
+        "time_mode": "Rolling Period",
+        "selected_period": "This Month",
+    }
+
+    df_filtered, months, _, exc_summary = prepare_filtered_dashboard_df(df, settings, filters)
+
+    # Excluded from active filtered dataframe
+    assert len(df_filtered) == 1
+    assert df_filtered.iloc[0]["Name"] == "Pret A Manger"
+
+    # Present in exceptional summary
+    assert len(exc_summary) == 1
+    assert exc_summary[0]["category"] == "Shopping"
+    assert exc_summary[0]["total"] == 799.00
+    assert exc_summary[0]["count"] == 1

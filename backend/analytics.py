@@ -136,8 +136,13 @@ def prepare_filtered_dashboard_df(
 
     exceptional_summary = []
     exceptional_cats = set(settings.get("exceptional_categories", []))
-    if exceptional_cats and not df_v.empty:
-        exc_mask = df_v["Category"].isin(exceptional_cats)
+    if not df_v.empty:
+        exc_mask = pd.Series(False, index=df_v.index)
+        if exceptional_cats:
+            exc_mask = exc_mask | df_v["Category"].isin(exceptional_cats)
+        if "Is_Exceptional" in df_v.columns:
+            exc_mask = exc_mask | df_v["Is_Exceptional"].fillna(False).astype(bool)
+
         if exc_mask.any():
             for exc_cat, grp in df_v[exc_mask].groupby("Category"):
                 exc_exp = float(grp[grp["Transaction_Type"] == "Expense"]["Amount"].sum())
