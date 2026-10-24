@@ -51,12 +51,15 @@ def test_is_exceptional_schema_backward_compatibility_and_roundtrip(tmp_path, mo
     old_csv = "Date,Name,Amount,Transaction_Type,Bank,Category,Notes,Financial_Year,Is_Subscription\n01/10/2026,Phone Replacement,599.00,Expense,Monzo,Shopping,Broken screen,2026/27,False\n"
     db_file.write_text(old_csv, encoding="utf-8")
 
-    monkeypatch.setattr("backend.storage.resolve_scope_paths", lambda scope: {
-        "db": str(db_file),
-        "settings": str(tmp_path / "settings.json"),
-        "filters": str(tmp_path / "saved_filters.json"),
-        "assets": str(tmp_path / "assets.json"),
-    })
+    monkeypatch.setattr(
+        "backend.storage.resolve_scope_paths",
+        lambda scope: {
+            "db": str(db_file),
+            "settings": str(tmp_path / "settings.json"),
+            "filters": str(tmp_path / "saved_filters.json"),
+            "assets": str(tmp_path / "assets.json"),
+        },
+    )
 
     df = load_transactions("Personal")
     assert "Is_Exceptional" in df.columns
@@ -118,35 +121,41 @@ def test_dashboard_excludes_individual_exceptional_transactions():
     from backend.analytics import prepare_filtered_dashboard_df
     import pandas as pd
 
-    df = pd.DataFrame([
-        {
-            "Date": pd.Timestamp("2026-10-05"),
-            "Name": "Pret A Manger",
-            "Amount": 4.50,
-            "Transaction_Type": "Expense",
-            "Bank": "Monzo",
-            "Category": "Dining Out",
-            "Notes": "",
-            "Financial_Year": "2026/27",
-            "Is_Subscription": False,
-            "Is_Exceptional": False,
-        },
-        {
-            "Date": pd.Timestamp("2026-10-10"),
-            "Name": "Apple Store",
-            "Amount": 799.00,
-            "Transaction_Type": "Expense",
-            "Bank": "Monzo",
-            "Category": "Shopping",
-            "Notes": "Replacement phone",
-            "Financial_Year": "2026/27",
-            "Is_Subscription": False,
-            "Is_Exceptional": True,
-        },
-    ])
+    df = pd.DataFrame(
+        [
+            {
+                "Date": pd.Timestamp("2026-10-05"),
+                "Name": "Pret A Manger",
+                "Amount": 4.50,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Dining Out",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            {
+                "Date": pd.Timestamp("2026-10-10"),
+                "Name": "Apple Store",
+                "Amount": 799.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "Replacement phone",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": True,
+            },
+        ]
+    )
 
     settings = {"exceptional_categories": [], "committed_categories": []}
-    filters = {"exclude_exceptional": True, "time_mode": "Rolling Period", "selected_period": "This Month"}
+    filters = {
+        "exclude_exceptional": True,
+        "time_mode": "Rolling Period",
+        "selected_period": "This Month",
+    }
 
     df_filtered, months, _, exc_summary = prepare_filtered_dashboard_df(df, settings, filters)
 
@@ -203,16 +212,73 @@ def test_spike_detection_with_time_horizon_and_dismissal_signature():
     from backend.analytics import build_intelligence_data
     import pandas as pd
 
-    df = pd.DataFrame([
-        # Normal shopping transactions
-        {"Date": pd.Timestamp("2026-05-01"), "Name": "Amazon", "Amount": 25.00, "Transaction_Type": "Expense", "Bank": "Monzo", "Category": "Shopping", "Notes": "", "Financial_Year": "2026/27", "Is_Subscription": False, "Is_Exceptional": False},
-        {"Date": pd.Timestamp("2026-06-01"), "Name": "Argos", "Amount": 30.00, "Transaction_Type": "Expense", "Bank": "Monzo", "Category": "Shopping", "Notes": "", "Financial_Year": "2026/27", "Is_Subscription": False, "Is_Exceptional": False},
-        {"Date": pd.Timestamp("2026-07-01"), "Name": "IKEA", "Amount": 40.00, "Transaction_Type": "Expense", "Bank": "Monzo", "Category": "Shopping", "Notes": "", "Financial_Year": "2026/27", "Is_Subscription": False, "Is_Exceptional": False},
-        # Outlier spike in 2026
-        {"Date": pd.Timestamp("2026-10-01"), "Name": "Apple Store", "Amount": 650.00, "Transaction_Type": "Expense", "Bank": "Monzo", "Category": "Shopping", "Notes": "Broken phone replacement", "Financial_Year": "2026/27", "Is_Subscription": False, "Is_Exceptional": False},
-        # Outlier spike in 2025
-        {"Date": pd.Timestamp("2025-04-10"), "Name": "B&Q", "Amount": 450.00, "Transaction_Type": "Expense", "Bank": "Monzo", "Category": "Home", "Notes": "Garden patio", "Financial_Year": "2025/26", "Is_Subscription": False, "Is_Exceptional": False},
-    ])
+    df = pd.DataFrame(
+        [
+            # Normal shopping transactions
+            {
+                "Date": pd.Timestamp("2026-05-01"),
+                "Name": "Amazon",
+                "Amount": 25.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            {
+                "Date": pd.Timestamp("2026-06-01"),
+                "Name": "Argos",
+                "Amount": 30.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            {
+                "Date": pd.Timestamp("2026-07-01"),
+                "Name": "IKEA",
+                "Amount": 40.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            # Outlier spike in 2026
+            {
+                "Date": pd.Timestamp("2026-10-01"),
+                "Name": "Apple Store",
+                "Amount": 650.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "Broken phone replacement",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            # Outlier spike in 2025
+            {
+                "Date": pd.Timestamp("2025-04-10"),
+                "Name": "B&Q",
+                "Amount": 450.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Home",
+                "Notes": "Garden patio",
+                "Financial_Year": "2025/26",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+        ]
+    )
 
     settings = {"ignore_exceptional_candidates": []}
 
@@ -284,46 +350,52 @@ def test_spend_rescuer_lifestyle_habits_and_category_creep():
     rows = []
     for m in [8, 9, 10]:
         for d in [5, 12, 19, 26]:
-            rows.append({
-                "Date": pd.Timestamp(f"2026-{m:02d}-{d:02d}"),
-                "Name": "Pret A Manger",
-                "Amount": 4.25,
+            rows.append(
+                {
+                    "Date": pd.Timestamp(f"2026-{m:02d}-{d:02d}"),
+                    "Name": "Pret A Manger",
+                    "Amount": 4.25,
+                    "Transaction_Type": "Expense",
+                    "Bank": "Monzo",
+                    "Category": "Dining Out",
+                    "Notes": "",
+                    "Financial_Year": "2026/27",
+                    "Is_Subscription": False,
+                    "Is_Exceptional": False,
+                }
+            )
+
+    # Category creep in Groceries: 6-month baseline ~£200/mo, recent 3 months ~£400/mo
+    for m in range(1, 7):
+        rows.append(
+            {
+                "Date": pd.Timestamp(f"2026-{m:02d}-15"),
+                "Name": "Tesco",
+                "Amount": 200.00,
                 "Transaction_Type": "Expense",
                 "Bank": "Monzo",
-                "Category": "Dining Out",
+                "Category": "Groceries",
                 "Notes": "",
                 "Financial_Year": "2026/27",
                 "Is_Subscription": False,
                 "Is_Exceptional": False,
-            })
-
-    # Category creep in Groceries: 6-month baseline ~£200/mo, recent 3 months ~£400/mo
-    for m in range(1, 7):
-        rows.append({
-            "Date": pd.Timestamp(f"2026-{m:02d}-15"),
-            "Name": "Tesco",
-            "Amount": 200.00,
-            "Transaction_Type": "Expense",
-            "Bank": "Monzo",
-            "Category": "Groceries",
-            "Notes": "",
-            "Financial_Year": "2026/27",
-            "Is_Subscription": False,
-            "Is_Exceptional": False,
-        })
+            }
+        )
     for m in [8, 9, 10]:
-        rows.append({
-            "Date": pd.Timestamp(f"2026-{m:02d}-15"),
-            "Name": "Tesco",
-            "Amount": 400.00,
-            "Transaction_Type": "Expense",
-            "Bank": "Monzo",
-            "Category": "Groceries",
-            "Notes": "",
-            "Financial_Year": "2026/27",
-            "Is_Subscription": False,
-            "Is_Exceptional": False,
-        })
+        rows.append(
+            {
+                "Date": pd.Timestamp(f"2026-{m:02d}-15"),
+                "Name": "Tesco",
+                "Amount": 400.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Groceries",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            }
+        )
 
     df = pd.DataFrame(rows)
     settings = {}
@@ -393,10 +465,13 @@ def test_intelligence_actions_and_patch_one_off(client, monkeypatch, tmp_path):
     assert "category_creep_warnings" in data
 
     # Test POST /api/intelligence/action mark_one_off
-    res_mark = client.post("/api/intelligence/action", json={
-        "action": "mark_one_off",
-        "row_id": 0,
-    })
+    res_mark = client.post(
+        "/api/intelligence/action",
+        json={
+            "action": "mark_one_off",
+            "row_id": 0,
+        },
+    )
     assert res_mark.status_code == 200
 
     # Test PATCH /api/transactions/0

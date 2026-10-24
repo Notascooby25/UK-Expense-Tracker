@@ -95,6 +95,7 @@ class TransactionCreateRequest(BaseModel):
     Category: str = ""
     Notes: str = ""
     Is_Subscription: bool = False
+    Is_Exceptional: bool = False
 
 
 class TransactionPatchRequest(BaseModel):
@@ -106,6 +107,7 @@ class TransactionPatchRequest(BaseModel):
     Category: str | None = None
     Notes: str | None = None
     Is_Subscription: bool | None = None
+    Is_Exceptional: bool | None = None
 
 
 class BulkTransactionsRequest(BaseModel):
@@ -114,6 +116,7 @@ class BulkTransactionsRequest(BaseModel):
     category: str | None = None
     transaction_type: str | None = None
     is_subscription: bool | None = None
+    is_exceptional: bool | None = None
 
 
 class GSheetsSyncRequest(BaseModel):
@@ -137,6 +140,7 @@ class SyncConfirmRow(BaseModel):
     Category: str
     Notes: str = ""
     Is_Subscription: bool = False
+    Is_Exceptional: bool = False
 
 
 class SyncConfirmRequest(BaseModel):
@@ -162,6 +166,9 @@ class IntelligenceActionRequest(BaseModel):
     merchants: list[str] = Field(default_factory=list)
     from_category: str | None = None
     to_category: str | None = None
+    row_id: int | None = None
+    signature: str | None = None
+    horizon: str | None = None
 
 
 class WealthBalanceSaveRequest(BaseModel):
@@ -234,6 +241,7 @@ def _serialize_tx_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
                 "Notes": clean_string(r.get("Notes", "")),
                 "Financial_Year": clean_string(r.get("Financial_Year", "")),
                 "Is_Subscription": bool(r.get("Is_Subscription", False)),
+                "Is_Exceptional": bool(r.get("Is_Exceptional", False)),
             }
         )
     return rows
@@ -326,6 +334,7 @@ def _filter_transactions_df(
     date_from: str = "",
     date_to: str = "",
     months: list[str] | None = None,
+    is_exceptional: bool | None = None,
 ) -> pd.DataFrame:
     """Apply unified Transactions & Export filters while preserving `_row_id`."""
     if df.empty:
@@ -347,6 +356,8 @@ def _filter_transactions_df(
         out = out[out["Transaction_Type"] == transaction_type]
     if financial_year and financial_year != "All":
         out = out[out["Financial_Year"] == financial_year]
+    if is_exceptional is not None and "Is_Exceptional" in out.columns:
+        out = out[out["Is_Exceptional"] == bool(is_exceptional)]
     if search:
         out = out[out["Name"].str.contains(search.strip(), case=False, na=False, regex=False)]
     if notes:
@@ -528,6 +539,7 @@ def list_transactions(
     date_from: str = Query(""),
     date_to: str = Query(""),
     months: list[str] = Query(default=[]),
+    is_exceptional: bool | None = Query(None),
     limit: int = Query(100, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     _user: str = Depends(require_auth),
@@ -550,6 +562,7 @@ def list_transactions(
         date_from=date_from,
         date_to=date_to,
         months=month_list,
+        is_exceptional=is_exceptional,
     )
     total = int(len(filtered))
     sliced = filtered.iloc[offset : offset + limit]
@@ -574,6 +587,7 @@ def export_transactions_csv(
     date_from: str = Query(""),
     date_to: str = Query(""),
     months: list[str] = Query(default=[]),
+    is_exceptional: bool | None = Query(None),
     _user: str = Depends(require_auth),
 ) -> StreamingResponse:
     norm_scope = normalize_scope(scope)
@@ -594,6 +608,7 @@ def export_transactions_csv(
         date_from=date_from,
         date_to=date_to,
         months=month_list,
+        is_exceptional=is_exceptional,
     )
     export_df = filtered[COLS].copy() if not filtered.empty else pd.DataFrame(columns=COLS)
     if not export_df.empty:
@@ -634,6 +649,7 @@ def create_transaction(
                 "Notes": clean_string(payload.Notes),
                 "Financial_Year": calculate_uk_financial_year(dt.normalize()),
                 "Is_Subscription": bool(payload.Is_Subscription),
+                "Is_Exceptional": bool(payload.Is_Exceptional),
             }
         ]
     )
@@ -678,6 +694,8 @@ def patch_transaction(
         df.at[row_id, "Notes"] = clean_string(payload.Notes)
     if payload.Is_Subscription is not None:
         df.at[row_id, "Is_Subscription"] = bool(payload.Is_Subscription)
+    if payload.Is_Exceptional is not None:
+        df.at[row_id, "Is_Exceptional"] = bool(payload.Is_Exceptional)
 
     save_transactions(norm_scope, df)
     single = df.loc[[row_id]].copy()
@@ -708,6 +726,8 @@ def bulk_update_transactions(
         df.loc[valid_ids, "Transaction_Type"] = clean_string(payload.transaction_type)
     if payload.is_subscription is not None:
         df.loc[valid_ids, "Is_Subscription"] = bool(payload.is_subscription)
+    if payload.is_exceptional is not None:
+        df.loc[valid_ids, "Is_Exceptional"] = bool(payload.is_exceptional)
 
     save_transactions(norm_scope, df)
     return {"saved": True, "affected": len(valid_ids), "total": len(df)}
@@ -895,12 +915,13 @@ def resolve_sync_conflicts(
 @app.get("/api/intelligence")
 def get_intelligence(
     scope: str = Query("Personal"),
+    horizon: str = Query("2026"),
     _user: str = Depends(require_auth),
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
     settings = load_settings(norm_scope)
-    return build_intelligence_data(df, settings)
+    return build_intelligence_data(df, settings, horizon=horizon)
 
 
 @app.post("/api/intelligence/action")
@@ -960,10 +981,24 @@ def execute_intelligence_action(
         settings["ignore_suggestions"] = muted
         save_settings(norm_scope, settings)
 
+    elif action == "mark_one_off":
+        if payload.row_id is not None and 0 <= payload.row_id < len(df):
+            df.at[payload.row_id, "Is_Exceptional"] = True
+            save_transactions(norm_scope, df)
+
+    elif action == "dismiss_one_off":
+        if payload.signature:
+            ignored = list(settings.get("ignore_exceptional_candidates", []))
+            if payload.signature not in ignored:
+                ignored.append(payload.signature)
+                settings["ignore_exceptional_candidates"] = ignored
+                save_settings(norm_scope, settings)
+
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported intelligence action: {action}")
 
-    return {"saved": True, "intelligence": build_intelligence_data(df, settings)}
+    horizon = payload.horizon or "2026"
+    return {"saved": True, "intelligence": build_intelligence_data(df, settings, horizon=horizon)}
 
 
 # --- Wealth & Assets Endpoints ---

@@ -746,3 +746,55 @@ def test_wealth_api_supports_debt_balances_and_summary(api_env):
     assert after_data["latest_net_worth"] == 10000.0
     assert "2026-10-18" in after_data["assets_by_month"]
     assert "2026-10-18" not in after_data["debts_by_month"]
+
+
+def test_intelligence_actions_and_patch_one_off(api_env):
+    """Verify GET /api/intelligence with horizon, mark_one_off, dismiss_one_off, and PATCH Is_Exceptional."""
+    client = TestClient(app)
+    client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": DUMMY_CRED, "remember_me": False},
+    )
+
+    # 1. Test GET /api/intelligence?horizon=2026
+    res = client.get("/api/intelligence?horizon=2026&scope=Personal")
+    assert res.status_code == 200
+    data = res.json()
+    assert "one_off_candidates" in data
+    assert "spend_rescue_opportunities" in data
+    assert "category_creep_warnings" in data
+
+    # 2. Test PATCH /api/transactions/1 to set Is_Exceptional = True
+    patch_res = client.patch(
+        "/api/transactions/1?scope=Personal",
+        json={"Is_Exceptional": True},
+    )
+    assert patch_res.status_code == 200
+    assert patch_res.json()["row"]["Is_Exceptional"] is True
+
+    # 3. Test POST /api/intelligence/action mark_one_off
+    action_res = client.post(
+        "/api/intelligence/action?scope=Personal",
+        json={"action": "mark_one_off", "row_id": 2},
+    )
+    assert action_res.status_code == 200
+    assert "intelligence" in action_res.json()
+
+    # Verify row 2 is now Is_Exceptional
+    tx_res = client.get("/api/transactions?scope=Personal")
+    assert tx_res.status_code == 200
+    rows = tx_res.json()["rows"]
+    row_map = {r["row_id"]: r for r in rows}
+    assert row_map[1]["Is_Exceptional"] is True
+    assert row_map[2]["Is_Exceptional"] is True
+
+    # 4. Test POST /api/intelligence/action dismiss_one_off
+    sig = "2026-01-18|Council Tax|150.00"
+    dismiss_res = client.post(
+        "/api/intelligence/action?scope=Personal",
+        json={"action": "dismiss_one_off", "signature": sig},
+    )
+    assert dismiss_res.status_code == 200
+    st_res = client.get("/api/bootstrap?scope=Personal")
+    assert st_res.status_code == 200
+    assert sig in st_res.json()["settings"].get("ignore_exceptional_candidates", [])
