@@ -147,6 +147,7 @@ export const api = {
       date_from?: string;
       date_to?: string;
       months?: string[];
+      is_exceptional?: boolean;
       limit?: number;
       offset?: number;
     }
@@ -164,6 +165,9 @@ export const api = {
       limit: String(params.limit ?? 100),
       offset: String(params.offset ?? 0),
     });
+    if (params.is_exceptional !== undefined) {
+      q.append('is_exceptional', String(params.is_exceptional));
+    }
     (params.categories || []).forEach((c) => q.append('categories', c));
     (params.months || []).forEach((m) => q.append('months', m));
     return requestJson<{
@@ -187,6 +191,7 @@ export const api = {
       date_from?: string;
       date_to?: string;
       months?: string[];
+      is_exceptional?: boolean;
     }
   ) {
     const q = new URLSearchParams({
@@ -200,6 +205,9 @@ export const api = {
       date_from: params.date_from || '',
       date_to: params.date_to || '',
     });
+    if (params.is_exceptional !== undefined) {
+      q.append('is_exceptional', String(params.is_exceptional));
+    }
     (params.categories || []).forEach((c) => q.append('categories', c));
     (params.months || []).forEach((m) => q.append('months', m));
     return `/api/transactions/export?${q.toString()}`;
@@ -216,6 +224,7 @@ export const api = {
       Category: string;
       Notes: string;
       Is_Subscription: boolean;
+      Is_Exceptional?: boolean;
     }
   ) {
     return requestJson<{ saved: boolean; row: TransactionRow; total: number }>(
@@ -239,6 +248,7 @@ export const api = {
       Category: string;
       Notes: string;
       Is_Subscription: boolean;
+      Is_Exceptional: boolean;
     }>
   ) {
     return requestJson<{ saved: boolean; row: TransactionRow }>(
@@ -258,6 +268,7 @@ export const api = {
       category?: string;
       transaction_type?: string;
       is_subscription?: boolean;
+      is_exceptional?: boolean;
     }
   ) {
     return requestJson<{ saved: boolean; affected: number; total: number }>(
@@ -312,10 +323,12 @@ export const api = {
     );
   },
 
-  getIntelligence(scope: AccountScope) {
-    return requestJson<IntelligencePayload>(
-      `/api/intelligence?scope=${encodeURIComponent(scope)}`
-    );
+  getIntelligence(scope: AccountScope, horizon: string = '2026') {
+    const q = new URLSearchParams({
+      scope,
+      horizon,
+    });
+    return requestJson<IntelligencePayload>(`/api/intelligence?${q.toString()}`);
   },
 
   executeIntelligenceAction(
@@ -327,6 +340,9 @@ export const api = {
       merchants?: string[];
       from_category?: string;
       to_category?: string;
+      row_id?: number;
+      signature?: string;
+      horizon?: string;
     }
   ) {
     return requestJson<{ saved: boolean; intelligence: IntelligencePayload }>(

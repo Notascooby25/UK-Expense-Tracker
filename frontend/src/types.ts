@@ -30,6 +30,7 @@ export interface FilterPreset {
   bank?: string;
   date_from?: string;
   date_to?: string;
+  is_exceptional?: boolean;
 }
 
 export interface TransactionsFilterHandoff {
@@ -39,6 +40,7 @@ export interface TransactionsFilterHandoff {
   date_from?: string;
   date_to?: string;
   months?: string[];
+  is_exceptional?: boolean;
 }
 
 export interface StartupHealth {
@@ -85,6 +87,7 @@ export interface TransactionRow {
   Notes: string;
   Financial_Year: string;
   Is_Subscription: boolean;
+  Is_Exceptional: boolean;
 }
 
 export interface DashboardPayload {
@@ -169,6 +172,35 @@ export interface CategoryDrilldownPayload {
   transactions: TransactionRow[];
 }
 
+export interface OneOffCandidate {
+  row_id: number;
+  date: string;
+  name: string;
+  amount: number;
+  category: string;
+  notes: string;
+  category_median: number;
+  signature: string;
+}
+
+export interface SpendRescueOpportunity {
+  habit: string;
+  transaction_count: number;
+  total_spend: number;
+  annual_projected: number;
+  annual_savings_25pct: number;
+  annual_savings_50pct: number;
+  sample_merchants: string[];
+}
+
+export interface CategoryCreepWarning {
+  category: string;
+  baseline_avg_monthly: number;
+  recent_avg_monthly: number;
+  monthly_increase: number;
+  pct_increase: number;
+}
+
 export interface IntelligencePayload {
   recurring_candidates: Array<{
     Merchant: string;
@@ -188,6 +220,9 @@ export interface IntelligencePayload {
     From: string;
     Suggested: string;
   }>;
+  one_off_candidates?: OneOffCandidate[];
+  spend_rescue_opportunities?: SpendRescueOpportunity[];
+  category_creep_warnings?: CategoryCreepWarning[];
 }
 
 export interface LoanSummary {

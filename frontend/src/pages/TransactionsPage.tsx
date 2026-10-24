@@ -61,6 +61,11 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
   const [transactionType, setTransactionType] = useState('Both');
+  const [oneOffFilter, setOneOffFilter] = useState<'All' | 'One-Off' | 'Regular'>(() => {
+    if (initialFilters?.is_exceptional === true) return 'One-Off';
+    if (initialFilters?.is_exceptional === false) return 'Regular';
+    return 'All';
+  });
   const [financialYear, setFinancialYear] = useState(initialFilters?.financial_year || 'All');
   const [dateFrom, setDateFrom] = useState(initialFilters?.date_from || '');
   const [dateTo, setDateTo] = useState(initialFilters?.date_to || '');
@@ -125,6 +130,11 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       setDateFrom(initialFilters.date_from || '');
       setDateTo(initialFilters.date_to || '');
       setMonths(initialFilters.months || []);
+      if (initialFilters.is_exceptional === true) {
+        setOneOffFilter('One-Off');
+      } else if (initialFilters.is_exceptional === false) {
+        setOneOffFilter('Regular');
+      }
       setCurrentPage(1);
       setSelectedIds(new Set());
       if (onClearInitialFilters) onClearInitialFilters();
@@ -170,6 +180,10 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     setError(null);
     try {
       const offset = (currentPage - 1) * pageSize;
+      let isExceptionalParam: boolean | undefined = undefined;
+      if (oneOffFilter === 'One-Off') isExceptionalParam = true;
+      if (oneOffFilter === 'Regular') isExceptionalParam = false;
+
       const res = await api.getTransactions(scope, {
         search,
         notes,
@@ -181,6 +195,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
         date_from: dateFrom,
         date_to: dateTo,
         months,
+        is_exceptional: isExceptionalParam,
         limit: pageSize,
         offset,
       });
@@ -201,6 +216,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     bank,
     selectedCategories,
     transactionType,
+    oneOffFilter,
     financialYear,
     dateFrom,
     dateTo,
@@ -226,6 +242,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     setCategorySearchQuery('');
     setCategoryDropdownOpen(false);
     setTransactionType('Both');
+    setOneOffFilter('All');
     setFinancialYear('All');
     setDateFrom('');
     setDateTo('');
@@ -241,6 +258,9 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     if (!name || !savedFilters[name]) return;
     const p = savedFilters[name];
     if (p.type !== undefined) setTransactionType(p.type);
+    if (p.is_exceptional === true) setOneOffFilter('One-Off');
+    else if (p.is_exceptional === false) setOneOffFilter('Regular');
+    else setOneOffFilter('All');
     if (p.fy !== undefined) setFinancialYear(p.fy);
     if (p.cats && Array.isArray(p.cats)) {
       setSelectedCategories(p.cats);
@@ -264,6 +284,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       ...savedFilters,
       [newPresetName.trim()]: {
         type: transactionType,
+        is_exceptional:
+          oneOffFilter === 'One-Off' ? true : oneOffFilter === 'Regular' ? false : undefined,
         fy: financialYear,
         cats: selectedCategories,
         merchant: search,
@@ -435,6 +457,24 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     }
   };
 
+  const handleApplyBulkOneOff = async (isExceptional: boolean) => {
+    if (selectedIds.size === 0) return;
+    try {
+      await api.bulkUpdateTransactions(scope, {
+        action: 'update',
+        row_ids: Array.from(selectedIds),
+        is_exceptional: isExceptional,
+      });
+      triggerSaveIndicator(
+        `Marked ${selectedIds.size} row(s) as ${isExceptional ? 'One-Off' : 'Regular'}`
+      );
+      setSelectedIds(new Set());
+      loadTransactions();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Bulk update failed');
+    }
+  };
+
   const handleApplyBulkDelete = async () => {
     if (selectedIds.size === 0) return;
     if (
@@ -458,6 +498,10 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
 
   // CSV Export URL
   const exportUrl = useMemo(() => {
+    let isExceptionalParam: boolean | undefined = undefined;
+    if (oneOffFilter === 'One-Off') isExceptionalParam = true;
+    if (oneOffFilter === 'Regular') isExceptionalParam = false;
+
     return api.getExportUrl(scope, {
       search,
       notes,
@@ -469,6 +513,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       date_from: dateFrom,
       date_to: dateTo,
       months,
+      is_exceptional: isExceptionalParam,
     });
   }, [
     scope,
@@ -477,6 +522,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     bank,
     selectedCategories,
     transactionType,
+    oneOffFilter,
     financialYear,
     dateFrom,
     dateTo,
@@ -578,7 +624,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
         </div>
 
         {/* Filter Inputs Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
           {/* Merchant Search */}
           <div className="space-y-1">
             <label className="text-[11px] font-medium text-slate-400">Merchant / Name</label>
@@ -754,6 +800,25 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
             </select>
           </div>
 
+          {/* Nature / One-Off */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-slate-400">Nature</label>
+            <select
+              value={oneOffFilter}
+              onChange={(e) =>
+                handleFilterChange(
+                  setOneOffFilter as (v: string) => void,
+                  e.target.value
+                )
+              }
+              className="w-full px-2.5 py-1.5 text-xs bg-[#263238] border border-slate-700 rounded-md text-slate-200 focus:outline-none focus:border-cyan-500"
+            >
+              <option value="All">All Transactions</option>
+              <option value="One-Off">One-Offs Only</option>
+              <option value="Regular">Regular Living</option>
+            </select>
+          </div>
+
           {/* Financial Year */}
           <div className="space-y-1">
             <label className="text-[11px] font-medium text-slate-400">Financial Year</label>
@@ -798,6 +863,28 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
             </div>
           </div>
         </div>
+
+        {oneOffFilter !== 'All' && (
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/40 text-xs text-amber-300">
+            <span>
+              Filtered to{' '}
+              <strong className="font-semibold">
+                {oneOffFilter === 'One-Off' ? 'One-Off / Exceptional Spends' : 'Regular Living Spends'}
+              </strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setOneOffFilter('All');
+                setCurrentPage(1);
+              }}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+            >
+              <X className="w-3 h-3" />
+              <span>Clear nature filter</span>
+            </button>
+          </div>
+        )}
 
         {selectedCategories.length > 0 && (
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/40 text-xs text-cyan-300">
@@ -934,13 +1021,14 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                 <th className="py-2.5 px-3 min-w-[150px]">Category</th>
                 <th className="py-2.5 px-3 min-w-[160px]">Notes</th>
                 <th className="py-2.5 px-3 w-16 text-center">Sub?</th>
+                <th className="py-2.5 px-3 w-20 text-center">One-Off?</th>
                 <th className="py-2.5 px-3 w-12 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-500 font-sans text-xs">
+                  <td colSpan={11} className="py-12 text-center text-slate-500 font-sans text-xs">
                     {loading ? 'Loading transactions...' : 'No transactions match current filters.'}
                   </td>
                 </tr>
@@ -1095,6 +1183,28 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
                         />
                       </td>
 
+                      {/* One-Off / Exceptional */}
+                      <td className="py-2 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleInlineChange(row.row_id, 'Is_Exceptional', !row.Is_Exceptional)
+                          }
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium transition-all ${
+                            row.Is_Exceptional
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                              : 'bg-slate-800/60 text-slate-500 border border-slate-700/60 hover:text-slate-300'
+                          }`}
+                          title={
+                            row.Is_Exceptional
+                              ? 'Marked as One-Off (Excluded from regular monthly baseline)'
+                              : 'Click to tag as One-Off spend'
+                          }
+                        >
+                          {row.Is_Exceptional ? 'One-Off' : 'Regular'}
+                        </button>
+                      </td>
+
                       {/* Single Action */}
                       <td className="py-2 px-3 text-center">
                         <button
@@ -1189,6 +1299,26 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
               title="Remove subscription flag"
             >
               - Sub
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-slate-700 hidden sm:block" />
+
+          {/* Bulk One-Off */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleApplyBulkOneOff(true)}
+              className="px-2 py-1 bg-amber-950/50 hover:bg-amber-900/60 text-amber-300 border border-amber-700/50 rounded font-medium transition-colors"
+              title="Flag selected as One-Off / Exceptional"
+            >
+              + One-Off
+            </button>
+            <button
+              onClick={() => handleApplyBulkOneOff(false)}
+              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-medium transition-colors"
+              title="Mark selected as Regular spend"
+            >
+              - One-Off
             </button>
           </div>
 
