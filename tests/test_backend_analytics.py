@@ -115,3 +115,95 @@ def test_dashboard_excludes_individual_exceptional_transactions():
     assert exc_summary[0]["category"] == "Shopping"
     assert exc_summary[0]["total"] == 799.00
     assert exc_summary[0]["count"] == 1
+
+
+def test_spike_detection_with_time_horizon_and_dismissal_signature():
+    """Verify spike candidates respect time horizons and dismissal signatures."""
+    from backend.analytics import build_intelligence_data
+
+    df = pd.DataFrame(
+        [
+            # Normal shopping transactions
+            {
+                "Date": pd.Timestamp("2026-05-01"),
+                "Name": "Amazon",
+                "Amount": 25.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            {
+                "Date": pd.Timestamp("2026-06-01"),
+                "Name": "Argos",
+                "Amount": 30.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            {
+                "Date": pd.Timestamp("2026-07-01"),
+                "Name": "IKEA",
+                "Amount": 40.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            # Outlier spike in 2026
+            {
+                "Date": pd.Timestamp("2026-10-01"),
+                "Name": "Apple Store",
+                "Amount": 650.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Shopping",
+                "Notes": "Broken phone replacement",
+                "Financial_Year": "2026/27",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+            # Outlier spike in 2025
+            {
+                "Date": pd.Timestamp("2025-04-10"),
+                "Name": "B&Q",
+                "Amount": 450.00,
+                "Transaction_Type": "Expense",
+                "Bank": "Monzo",
+                "Category": "Home",
+                "Notes": "Garden patio",
+                "Financial_Year": "2025/26",
+                "Is_Subscription": False,
+                "Is_Exceptional": False,
+            },
+        ]
+    )
+
+    settings = {"ignore_exceptional_candidates": []}
+
+    # 1. Horizon 2026 only catches the Apple Store spike
+    intel_2026 = build_intelligence_data(df, settings, horizon="2026")
+    candidates_2026 = intel_2026["one_off_candidates"]
+    assert len(candidates_2026) == 1
+    assert candidates_2026[0]["name"] == "Apple Store"
+    assert candidates_2026[0]["amount"] == 650.00
+
+    # 2. Dismissing Apple Store with signature suppresses it
+    apple_sig = candidates_2026[0]["signature"]
+    settings_dismissed = {"ignore_exceptional_candidates": [apple_sig]}
+    intel_dismissed = build_intelligence_data(df, settings_dismissed, horizon="2026")
+    assert len(intel_dismissed["one_off_candidates"]) == 0
+
+    # 3. Horizon 2025 catches the B&Q spike
+    intel_2025 = build_intelligence_data(df, settings, horizon="2025")
+    assert any(c["name"] == "B&Q" for c in intel_2025["one_off_candidates"])

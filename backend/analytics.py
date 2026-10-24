@@ -512,11 +512,94 @@ def build_category_drilldown(
     }
 
 
-def build_intelligence_data(df: pd.DataFrame, settings: dict[str, Any]) -> dict[str, Any]:
-    """Run all three Intelligence scans (Recurring Bills, Unflagged Subscriptions, Category Cleanup)."""
+def build_intelligence_data(
+    df: pd.DataFrame, settings: dict[str, Any], horizon: str = "2026"
+) -> dict[str, Any]:
+    """Run Intelligence scans (Spikes & One-Offs, Recurring Bills, Subscriptions, Category Cleanup, and Spend Rescuer)."""
     ignore_recurring = [str(x) for x in settings.get("ignore_recurring", [])]
+    ignore_exceptional = set(settings.get("ignore_exceptional_candidates", []))
     committed_cats = set(settings.get("committed_categories", []))
     recurring_candidates: list[dict[str, Any]] = []
+    one_off_candidates: list[dict[str, Any]] = []
+
+    # 0. Horizon-scoped data for spike detection and intelligence audit
+    df_scope = df.copy()
+    if not df_scope.empty:
+        if "_row_id" not in df_scope.columns:
+            df_scope["_row_id"] = df_scope.index
+        df_scope["Date"] = pd.to_datetime(df_scope["Date"], errors="coerce")
+        df_scope = df_scope.dropna(subset=["Date"]).copy()
+
+        h_str = str(horizon).strip().lower()
+        if h_str in {"2026", "2025", "2024", "2023"}:
+            df_scope = df_scope[df_scope["Date"].dt.year == int(h_str)]
+        elif h_str in {"last 6 months", "last_6_months"}:
+            cutoff = pd.Timestamp.now().normalize() - pd.DateOffset(months=6)
+            df_scope = df_scope[df_scope["Date"] >= cutoff]
+        elif h_str in {"last 12 months", "last_12_months"}:
+            cutoff = pd.Timestamp.now().normalize() - pd.DateOffset(months=12)
+            df_scope = df_scope[df_scope["Date"] >= cutoff]
+
+    # Calculate category statistics across all variable expenses for reliable baseline comparison
+    cat_stats: dict[str, dict[str, float]] = {}
+    if not df.empty:
+        all_exp_mask = df["Transaction_Type"] == "Expense"
+        all_var_mask = (
+            all_exp_mask
+            & (~df["Category"].isin(committed_cats))
+            & (~df["Category"].isin(INTERNAL_CATEGORIES))
+        )
+        if "Is_Exceptional" in df.columns:
+            all_var_mask = all_var_mask & (~df["Is_Exceptional"].fillna(False).astype(bool))
+        df_all_var = df[all_var_mask]
+        if not df_all_var.empty:
+            for cat_name, grp in df_all_var.groupby("Category"):
+                cat_stats[str(cat_name)] = {
+                    "median": float(grp["Amount"].median()),
+                    "count": float(len(grp)),
+                }
+
+    # Spike & One-Off Detection within horizon
+    if not df_scope.empty:
+        exp_mask = df_scope["Transaction_Type"] == "Expense"
+        var_mask = (
+            exp_mask
+            & (~df_scope["Category"].isin(committed_cats))
+            & (~df_scope["Category"].isin(INTERNAL_CATEGORIES))
+        )
+        if "Is_Exceptional" in df_scope.columns:
+            var_mask = var_mask & (~df_scope["Is_Exceptional"].fillna(False).astype(bool))
+
+        df_var = df_scope[var_mask].copy()
+        if not df_var.empty:
+            for idx, r in df_var.iterrows():
+                row_amt = round(float(r.get("Amount", 0.0)), 2)
+                cat = clean_string(r.get("Category", ""))
+                stat = cat_stats.get(cat, {"median": row_amt, "count": 1.0})
+                cat_med = float(stat["median"])
+                cat_cnt = int(stat["count"])
+
+                # Anomaly condition: >= £150 and either rare category (<3 occurrences) or >= 2.5x median
+                is_spike = row_amt >= 150.0 and (cat_cnt < 3 or row_amt >= 2.5 * cat_med)
+                if is_spike:
+                    row_date = pd.to_datetime(r["Date"])
+                    row_name = clean_string(r.get("Name", ""))
+                    sig = f"{row_date.strftime('%Y-%m-%d')}|{row_name}|{row_amt:.2f}"
+                    if sig not in ignore_exceptional:
+                        one_off_candidates.append(
+                            {
+                                "row_id": int(r["_row_id"]) if "_row_id" in r else int(idx),
+                                "date": row_date.strftime("%Y-%m-%d"),
+                                "date_display": row_date.strftime("%d/%m/%Y"),
+                                "name": row_name,
+                                "amount": row_amt,
+                                "category": cat,
+                                "bank": clean_string(r.get("Bank", "")),
+                                "signature": sig,
+                                "reason": f"£{row_amt:.2f} is significantly higher than typical for {cat}",
+                            }
+                        )
+            one_off_candidates.sort(key=lambda x: x["amount"], reverse=True)
 
     if not df.empty:
         df_exp = df[df["Transaction_Type"] == "Expense"].copy()
@@ -624,6 +707,7 @@ def build_intelligence_data(df: pd.DataFrame, settings: dict[str, Any]) -> dict[
                         )
 
     return {
+        "one_off_candidates": one_off_candidates,
         "recurring_candidates": recurring_candidates,
         "ignored_recurring": sorted(ignore_recurring),
         "subscription_candidates": subscription_candidates,
