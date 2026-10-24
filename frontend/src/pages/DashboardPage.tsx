@@ -16,6 +16,7 @@ import {
   RefreshCw,
   AlertCircle,
   Zap,
+  ChevronRight,
 } from 'lucide-react';
 import {
   BarChart,
@@ -1039,6 +1040,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => onNavigateToTransactions({ is_exceptional: true })}
+                className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold text-[11px] border border-amber-500/40 transition-colors flex items-center gap-1"
+                title="View all one-offs in Transactions Editor"
+              >
+                <span>View All One-Offs</span>
+                <ChevronRight className="w-3 h-3" />
+              </button>
               {data.exceptional_summary.map((item) => (
                 <button
                   key={item.category}
