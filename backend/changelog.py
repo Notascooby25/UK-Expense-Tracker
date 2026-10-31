@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.8.3"
+APP_VERSION = "0.8.4"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.8.4",
+        "date": "31 Oct 2026",
+        "title": "Import Fixes: Monzo Split Direction & Complete Review List",
+        "changes": [
+            "Fixed Monzo split transactions being saved as Income. A £75.50 shop split into Groceries and Household was recorded as £75.50 of refunds, lowering your spend instead of adding to it. Splits now take the direction of the original transaction.",
+            "Rows that arrive with a blank type next to split rows now get their Expense/Income type from the sign of the amount instead of staying blank.",
+            "The review list after an import now shows every newly added row, including when a previously unsplit transaction was replaced by its splits (it used to show only some of them).",
+            "Existing transactions are not changed by this release. Any past splits already saved as Income need a separate, reviewed repair.",
+        ],
+    },
     {
         "version": "0.8.3",
         "date": "31 Oct 2026",

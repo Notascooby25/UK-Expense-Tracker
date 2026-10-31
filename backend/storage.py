@@ -780,7 +780,12 @@ def process_monzo_splits(df: pd.DataFrame) -> pd.DataFrame:
                 parent_name = str(row.get("Name", "")).strip()
                 raw_parent_amt = str(row.get("Amount", "0.0"))
                 clean_parent_amt = re.sub(r"[^\d.-]", "", raw_parent_amt)
-                parent_amt = abs(float(clean_parent_amt)) if clean_parent_amt else 0.0
+                parent_signed = float(clean_parent_amt) if clean_parent_amt else 0.0
+                parent_amt = abs(parent_signed)
+                # Amounts are stored as positive numbers, so the direction must be set
+                # here: once abs() is applied, the sign-based inference downstream would
+                # read every split of a spend as Income.
+                parent_type = clean_string(row.get("Transaction_Type", ""))
 
                 for split in splits:
                     if ":" not in split:
@@ -789,9 +794,14 @@ def process_monzo_splits(df: pd.DataFrame) -> pd.DataFrame:
                     clean_amt = re.sub(r"[^\d.-]", "", amount.strip())
                     if not clean_amt:
                         continue
+                    signed_split = float(clean_amt)
                     new_dict = row.to_dict()
                     new_dict["Category"] = cat.strip()
-                    new_dict["Amount"] = abs(float(clean_amt))
+                    new_dict["Amount"] = abs(signed_split)
+                    if not parent_type:
+                        direction = parent_signed if parent_signed != 0 else signed_split
+                        if direction != 0:
+                            new_dict["Transaction_Type"] = "Income" if direction > 0 else "Expense"
                     new_dict["_parent_split_date"] = parent_date
                     new_dict["_parent_split_name"] = parent_name
                     new_dict["_parent_split_amount"] = parent_amt
@@ -975,13 +985,20 @@ def parse_and_merge_import(
         empty = pd.DataFrame(columns=COLS)
         return existing_df.copy(), empty, empty, []
 
-    if "Transaction_Type" not in new_df.columns and "Amount" in new_df.columns:
+    if "Amount" in new_df.columns:
         raw_amt = pd.to_numeric(
             new_df["Amount"].astype(str).str.replace(r"[^\d.-]", "", regex=True),
             errors="coerce",
         ).fillna(0.0)
-        new_df["Transaction_Type"] = raw_amt.apply(lambda x: "Income" if x > 0 else "Expense")
-        new_df["Amount"] = raw_amt.abs()
+        inferred_type = raw_amt.apply(lambda x: "Income" if x > 0 else "Expense")
+        if "Transaction_Type" not in new_df.columns:
+            new_df["Transaction_Type"] = inferred_type
+            new_df["Amount"] = raw_amt.abs()
+        else:
+            # Fill only the blanks (e.g. ordinary rows next to split rows); a type that
+            # is already set is never overridden.
+            blank = new_df["Transaction_Type"].apply(clean_string) == ""
+            new_df.loc[blank, "Transaction_Type"] = inferred_type[blank]
 
     for c in COLS:
         if c not in new_df.columns:

@@ -261,6 +261,20 @@ def _serialize_tx_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
     return rows
 
 
+def _serialize_new_rows(merged_df: pd.DataFrame, new_rows_df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Serialise the rows an import just added, tagged with their row ids in merged_df.
+
+    parse_and_merge_import appends new rows at the end of merged_df. Taking them from
+    the end (not from the pre-import length) stays correct when the import also
+    removed rows, e.g. an unsplit parent replaced by its split rows.
+    """
+    if new_rows_df.empty:
+        return []
+    new_slice = merged_df.iloc[len(merged_df) - len(new_rows_df) :].copy()
+    new_slice["_row_id"] = new_slice.index
+    return _serialize_tx_rows(new_slice)
+
+
 def _parse_list_param(raw: list[str] | str | None) -> list[str]:
     """Parse list query parameters that might arrive as repeated params or comma-separated strings."""
     if not raw:
@@ -800,7 +814,6 @@ def sync_from_gsheets(
     with storage_txn():
         settings = load_settings(norm_scope)
         existing_df = load_transactions(norm_scope)
-        pre_len = len(existing_df)
         merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
             existing_df,
             raw_df,
@@ -810,13 +823,7 @@ def sync_from_gsheets(
         )
         save_transactions(norm_scope, merged_df)
 
-    # Tag new rows with their assigned row_ids in merged_df so inline review edits persist directly
-    if not new_rows_df.empty:
-        new_slice = merged_df.iloc[pre_len:].copy()
-        new_slice["_row_id"] = new_slice.index
-        serialized_new = _serialize_tx_rows(new_slice)
-    else:
-        serialized_new = []
+    serialized_new = _serialize_new_rows(merged_df, new_rows_df)
 
     return {
         "saved": True,
@@ -846,7 +853,6 @@ def import_csv_file(
         raw_df = pd.read_csv(io.BytesIO(content), header=hdr, encoding="ISO-8859-1")
 
     existing_df = load_transactions(norm_scope)
-    pre_len = len(existing_df)
     merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
         existing_df,
         raw_df,
@@ -856,12 +862,7 @@ def import_csv_file(
     )
     save_transactions(norm_scope, merged_df)
 
-    if not new_rows_df.empty:
-        new_slice = merged_df.iloc[pre_len:].copy()
-        new_slice["_row_id"] = new_slice.index
-        serialized_new = _serialize_tx_rows(new_slice)
-    else:
-        serialized_new = []
+    serialized_new = _serialize_new_rows(merged_df, new_rows_df)
 
     return {
         "saved": True,
@@ -890,7 +891,6 @@ def import_pasted_rows(
         raise HTTPException(status_code=400, detail=f"Paste parse error: {exc}") from exc
 
     existing_df = load_transactions(norm_scope)
-    pre_len = len(existing_df)
     merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
         existing_df,
         raw_df,
@@ -900,12 +900,7 @@ def import_pasted_rows(
     )
     save_transactions(norm_scope, merged_df)
 
-    if not new_rows_df.empty:
-        new_slice = merged_df.iloc[pre_len:].copy()
-        new_slice["_row_id"] = new_slice.index
-        serialized_new = _serialize_tx_rows(new_slice)
-    else:
-        serialized_new = []
+    serialized_new = _serialize_new_rows(merged_df, new_rows_df)
 
     return {
         "saved": True,
