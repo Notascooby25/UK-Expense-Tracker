@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.8.2"
+APP_VERSION = "0.8.3"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.8.3",
+        "date": "31 Oct 2026",
+        "title": "Write Safety: No More Lost Saves, Safety Copy & Backup Readability",
+        "changes": [
+            "Overlapping saves (two tabs, two devices, or a sync during an edit) are now queued instead of overwriting each other. Previously 24 simultaneous adds could leave a single row on disk.",
+            "Every save now keeps the version from before it as expense_database.csv.bak and logs a warning if the row count drops sharply, so a bad import or bulk delete can be undone if you catch it before the next save. The nightly backups remain the long-term safety net.",
+            "Data files now keep their permissions when saved. They were being recreated as owner-only (0600) on every save, which silently stopped the nightly backup from reading them.",
+            "Added scripts/check_backup_fresh.sh, which fails if the newest backup is missing, older than 26 hours, or fails its checksum.",
+        ],
+    },
     {
         "version": "0.8.2",
         "date": "31 Oct 2026",

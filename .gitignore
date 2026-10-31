@@ -15,6 +15,7 @@ venv/
 data/**
 !data/.gitkeep
 expense_database*.csv
+expense_database*.csv.bak
 settings*.json
 saved_filters*.json
 

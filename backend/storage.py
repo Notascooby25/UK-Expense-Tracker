@@ -2,17 +2,51 @@
 
 from __future__ import annotations
 
+import contextlib
+import functools
+import io
 import json
+import logging
 import os
 import re
-import tempfile
+import stat
 import threading
-from typing import Any
+from collections.abc import Callable, Iterator
+from typing import Any, TypeVar
 import uuid
 
 import pandas as pd
 
+logger = logging.getLogger("expense_tracker.storage")
+
+# File-level lock: held only while a single file is read or written.
 _STORAGE_LOCK = threading.RLock()
+
+# Request-level lock: held across a whole load -> modify -> save sequence so two
+# overlapping requests cannot both start from the same snapshot and overwrite each
+# other. Reads never take it. The app must run a single worker process for this to hold.
+_WRITE_LOCK = threading.RLock()
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+@contextlib.contextmanager
+def storage_txn() -> Iterator[None]:
+    """Serialise a read-modify-write sequence against other writers (reentrant)."""
+    with _WRITE_LOCK:
+        yield
+
+
+def serialized(fn: _F) -> _F:
+    """Decorator running a whole route handler inside storage_txn()."""
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        with storage_txn():
+            return fn(*args, **kwargs)
+
+    return wrapper  # type: ignore[return-value]
+
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -217,18 +251,38 @@ def calculate_uk_financial_year(date_obj: object) -> str:
 
 
 def atomic_write_bytes(filepath: str, payload: bytes) -> None:
-    """Atomically write bytes to filepath using a temporary file and os.replace."""
+    """Atomically write bytes to filepath using a temporary file and os.replace.
+
+    An existing file keeps its permission bits (and owner where allowed), so a
+    deliberate chmod survives every save. A new file gets the normal umask-based
+    mode rather than the owner-only 0600 that tempfile.NamedTemporaryFile forces,
+    which previously made the data files unreadable to the backup job.
+    """
     with _STORAGE_LOCK:
         target_dir = os.path.dirname(os.path.abspath(filepath)) or "."
         os.makedirs(target_dir, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            mode="wb", dir=target_dir, prefix=".tmp_expense_", delete=False
-        ) as tmp_file:
-            tmp_name = tmp_file.name
-            tmp_file.write(payload)
-            tmp_file.flush()
-            os.fsync(tmp_file.fileno())
-        os.replace(tmp_name, filepath)
+        tmp_name = os.path.join(target_dir, f".tmp_expense_{uuid.uuid4().hex}")
+        try:
+            fd = os.open(tmp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+            with os.fdopen(fd, "wb") as tmp_file:
+                try:
+                    existing = os.stat(filepath)
+                except FileNotFoundError:
+                    existing = None
+                if existing is not None:
+                    os.fchmod(tmp_file.fileno(), stat.S_IMODE(existing.st_mode))
+                    try:
+                        os.fchown(tmp_file.fileno(), existing.st_uid, existing.st_gid)
+                    except OSError:
+                        pass  # not permitted (not root): keep the current owner
+                tmp_file.write(payload)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+            os.replace(tmp_name, filepath)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_name)
+            raise
 
 
 def load_json_file(filepath: str) -> dict[str, Any]:
@@ -625,7 +679,42 @@ def save_transactions(scope: str, df: pd.DataFrame) -> None:
             export_df = export_df[COLS]
 
         csv_bytes = export_df.to_csv(index=False, encoding="utf-8").encode("utf-8")
+        _keep_previous_version(paths["db"], new_rows=len(export_df))
         atomic_write_bytes(paths["db"], csv_bytes)
+
+
+def _keep_previous_version(db_path: str, new_rows: int) -> None:
+    """Copy the current database file to '<name>.bak' before it is replaced.
+
+    Also logs a warning when the row count drops sharply, so an accidental bulk
+    delete or a bad import is visible in the logs and recoverable from the .bak.
+    """
+    try:
+        with open(db_path, "rb") as f:
+            previous = f.read()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        logger.error("Could not read %s to keep a safety copy: %s", db_path, exc)
+        return
+
+    try:
+        atomic_write_bytes(db_path + ".bak", previous)
+    except OSError as exc:
+        logger.error("Could not write safety copy %s.bak: %s", db_path, exc)
+
+    try:
+        old_rows = len(pd.read_csv(io.BytesIO(previous), encoding="utf-8"))
+    except Exception:
+        return
+    if old_rows >= 20 and new_rows < old_rows * 0.9:
+        logger.warning(
+            "Transactions file shrank from %d to %d rows (%s); previous version kept at %s.bak",
+            old_rows,
+            new_rows,
+            os.path.basename(db_path),
+            db_path,
+        )
 
 
 def get_pure_monzo_categories(df: pd.DataFrame) -> set[str]:

@@ -73,6 +73,8 @@ from backend.storage import (
     save_filters,
     save_settings,
     save_transactions,
+    serialized,
+    storage_txn,
     update_mortgage_profile,
 )
 from backend.mortgage_utils import (
@@ -651,6 +653,7 @@ def export_transactions_csv(
 
 
 @app.post("/api/transactions")
+@serialized
 def create_transaction(
     payload: TransactionCreateRequest,
     scope: str = Query("Personal"),
@@ -690,6 +693,7 @@ def create_transaction(
 
 
 @app.patch("/api/transactions/{row_id}")
+@serialized
 def patch_transaction(
     row_id: int,
     payload: TransactionPatchRequest,
@@ -731,6 +735,7 @@ def patch_transaction(
 
 
 @app.post("/api/transactions/bulk")
+@serialized
 def bulk_update_transactions(
     payload: BulkTransactionsRequest,
     scope: str = Query("Personal"),
@@ -768,36 +773,42 @@ def sync_from_gsheets(
     _user: str = Depends(require_auth),
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
-    settings = load_settings(norm_scope)
-    sheet_url = (payload.sheet_url or settings.get("monzo_sheet_url", "")).strip()
-    worksheet_name = (payload.worksheet_name or settings.get("monzo_sheet_worksheet", "")).strip()
+    with storage_txn():
+        settings = load_settings(norm_scope)
+        sheet_url = (payload.sheet_url or settings.get("monzo_sheet_url", "")).strip()
+        worksheet_name = (
+            payload.worksheet_name or settings.get("monzo_sheet_worksheet", "")
+        ).strip()
 
-    if not sheet_url:
-        raise HTTPException(
-            status_code=400,
-            detail="Monzo Sheet URL is empty. Enter your Google Sheet URL to sync.",
-        )
+        if not sheet_url:
+            raise HTTPException(
+                status_code=400,
+                detail="Monzo Sheet URL is empty. Enter your Google Sheet URL to sync.",
+            )
 
-    settings["monzo_sheet_url"] = sheet_url
-    if worksheet_name:
-        settings["monzo_sheet_worksheet"] = worksheet_name
-    save_settings(norm_scope, settings)
+        settings["monzo_sheet_url"] = sheet_url
+        if worksheet_name:
+            settings["monzo_sheet_worksheet"] = worksheet_name
+        settings = save_settings(norm_scope, settings)
 
+    # The network fetch runs outside the write lock so other saves are not blocked.
     try:
         raw_df = fetch_google_sheet_dataframe(sheet_url, settings["monzo_sheet_worksheet"])
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Google Sheets sync failed: {exc}") from exc
 
-    existing_df = load_transactions(norm_scope)
-    pre_len = len(existing_df)
-    merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
-        existing_df,
-        raw_df,
-        settings.get("auto_rules", []),
-        source_format="Monzo",
-        resolved_conflicts=settings.get("resolved_conflicts", {}),
-    )
-    save_transactions(norm_scope, merged_df)
+    with storage_txn():
+        settings = load_settings(norm_scope)
+        existing_df = load_transactions(norm_scope)
+        pre_len = len(existing_df)
+        merged_df, new_rows_df, updated_rows_df, conflicts = parse_and_merge_import(
+            existing_df,
+            raw_df,
+            settings.get("auto_rules", []),
+            source_format="Monzo",
+            resolved_conflicts=settings.get("resolved_conflicts", {}),
+        )
+        save_transactions(norm_scope, merged_df)
 
     # Tag new rows with their assigned row_ids in merged_df so inline review edits persist directly
     if not new_rows_df.empty:
@@ -818,7 +829,8 @@ def sync_from_gsheets(
 
 
 @app.post("/api/sync/import-file")
-async def import_csv_file(
+@serialized
+def import_csv_file(
     file: UploadFile = File(...),
     source_format: str = Form("Auto-Detect"),
     scope: str = Query("Personal"),
@@ -826,7 +838,7 @@ async def import_csv_file(
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
     settings = load_settings(norm_scope)
-    content = await file.read()
+    content = file.file.read()
     hdr = None if source_format == "Barclaycard" else 0
     try:
         raw_df = pd.read_csv(io.BytesIO(content), header=hdr, encoding="utf-8")
@@ -861,6 +873,7 @@ async def import_csv_file(
 
 
 @app.post("/api/sync/import-paste")
+@serialized
 def import_pasted_rows(
     payload: PasteImportRequest,
     scope: str = Query("Personal"),
@@ -904,6 +917,7 @@ def import_pasted_rows(
 
 
 @app.post("/api/sync/resolve-conflicts")
+@serialized
 def resolve_sync_conflicts(
     payload: ResolveConflictsRequest,
     scope: str = Query("Personal"),
@@ -952,6 +966,7 @@ def get_intelligence(
 
 
 @app.post("/api/intelligence/action")
+@serialized
 def execute_intelligence_action(
     payload: IntelligenceActionRequest,
     scope: str = Query("Personal"),
@@ -1046,6 +1061,7 @@ def get_wealth(
 
 
 @app.post("/api/wealth/balances")
+@serialized
 def save_wealth_balances(
     payload: WealthBalanceSaveRequest,
     scope: str = Query("Personal"),
@@ -1101,6 +1117,7 @@ def save_wealth_balances(
 
 
 @app.delete("/api/wealth/balances/{month}")
+@serialized
 def delete_wealth_month(
     month: str,
     target: str = Query("all"),
@@ -1128,6 +1145,7 @@ def delete_wealth_month(
 
 
 @app.post("/api/wealth/accounts")
+@serialized
 def manage_wealth_account(
     payload: WealthAccountManageRequest,
     scope: str = Query("Personal"),
@@ -1195,6 +1213,7 @@ def manage_wealth_account(
 
 # --- Settings & Filter Presets Endpoints ---
 @app.put("/api/settings")
+@serialized
 def update_settings(
     payload: dict[str, Any],
     scope: str = Query("Personal"),
@@ -1213,6 +1232,7 @@ def update_settings(
 
 
 @app.post("/api/settings/apply-rules")
+@serialized
 def apply_rules_to_existing(
     scope: str = Query("Personal"),
     _user: str = Depends(require_auth),
@@ -1244,6 +1264,7 @@ def test_rule_match(
 
 
 @app.put("/api/filters")
+@serialized
 def update_filter_presets(
     payload: dict[str, Any],
     scope: str = Query("Personal"),

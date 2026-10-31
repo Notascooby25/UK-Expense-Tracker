@@ -291,6 +291,26 @@ Notes:
 
 The backup scripts have hermetic tests (temp dirs and a stub `crontab` only): `scripts/tests/test_data_backup.sh`.
 
+### Running the job as root, and checking it works
+
+The container writes the files in `data/` as root. If they are owner-only, a cron job running as
+a normal user cannot read them and every nightly run fails with `Permission denied` (the script
+discards the partial archive, so nothing is saved). Install the job in **root's** crontab on such
+a host: `sudo ./scripts/setup_backup_cron.sh`.
+
+To be told when backups stop, run `scripts/check_backup_fresh.sh` from any scheduler or monitor
+and alert on a non-zero exit. It checks that the newest archive is under 26 hours old, has a
+matching `.sha256`, and is a readable archive:
+
+```bash
+./scripts/check_backup_fresh.sh /srv/shared/backups 26
+```
+
+The app also keeps the version of the transactions file from before the **last save** as
+`data/expense_database.csv.bak` (and `expense_database_joint.csv.bak`). If you notice a bad import
+or bulk delete straight away, stop the app and copy the `.bak` back. It holds only one
+generation: any later save replaces it, so rely on the nightly archives for anything older.
+
 ### Restoring
 
 ```bash

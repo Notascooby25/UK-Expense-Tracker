@@ -10,6 +10,7 @@ __pycache__/
 .streamlit/secrets.toml
 data/
 expense_database.csv
+expense_database*.csv.bak
 expense_database11111.csv
 settings.json
 saved_filters.json
