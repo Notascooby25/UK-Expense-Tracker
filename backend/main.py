@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import os
-import secrets
 from typing import Any
 
 import pandas as pd
@@ -32,10 +31,15 @@ from backend.analytics import (
 from backend.auth import (
     COOKIE_NAME,
     SESSION_MAX_AGE_SECONDS,
+    check_login_throttle,
+    compare_text,
     create_session_token,
     get_auth_credentials,
     has_auth_secrets,
     is_auth_secrets_required,
+    is_truthy,
+    record_login_failure,
+    record_login_success,
     require_auth,
     verify_session_token,
 )
@@ -76,7 +80,15 @@ from backend.mortgage_utils import (
     calculate_mortgage_summary,
 )
 
-app = FastAPI(title="UK Finance Tracker API", version=APP_VERSION)
+
+def fastapi_docs_kwargs() -> dict[str, None]:
+    """Disable the unauthenticated /docs, /redoc and /openapi.json routes in production."""
+    if os.getenv("EXPENSE_TRACKER_ENV", "development").strip().lower() == "production":
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {}
+
+
+app = FastAPI(title="UK Finance Tracker API", version=APP_VERSION, **fastapi_docs_kwargs())
 
 
 # --- Pydantic Schemas ---
@@ -395,24 +407,39 @@ def auth_status(request: Request) -> dict[str, Any]:
 
 
 @app.post("/api/auth/login")
-def auth_login(payload: LoginRequest, response: Response) -> dict[str, Any]:
+def auth_login(payload: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
     valid_user, valid_pass, notice = get_auth_credentials()
     if valid_user is None or valid_pass is None:
         raise HTTPException(status_code=503, detail=notice or "Auth secrets not configured.")
 
-    user_ok = secrets.compare_digest(payload.username.strip(), valid_user)
-    pass_ok = secrets.compare_digest(payload.password, valid_pass)
+    client_key = request.client.host if request.client else "unknown"
+    retry_after = check_login_throttle(client_key)
+    if retry_after:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts. Try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    user_ok = compare_text(payload.username.strip(), valid_user)
+    pass_ok = compare_text(payload.password, valid_pass)
     if not (user_ok and pass_ok):
+        record_login_failure(client_key)
         raise HTTPException(status_code=401, detail="Incorrect username or password.")
+    record_login_success(client_key)
 
     max_age = SESSION_MAX_AGE_SECONDS if payload.remember_me else 24 * 60 * 60
     token = create_session_token(valid_user, max_age=max_age)
+    forwarded_https = request.headers.get("x-forwarded-proto", "").strip().lower() == "https"
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         max_age=max_age if payload.remember_me else None,
         httponly=True,
         samesite="lax",
+        secure=forwarded_https
+        or request.url.scheme == "https"
+        or is_truthy(os.getenv("EXPENSE_TRACKER_COOKIE_SECURE", "")),
     )
     return {"authenticated": True, "username": valid_user, "notice": notice}
 
@@ -1333,16 +1360,40 @@ def calculate_mortgage_simulation_endpoint(
 
 # --- Static SPA Hosting (Production) ---
 FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
+
+
+def resolve_spa_file(dist_root: str, requested: str) -> str | None:
+    """Return the real path of a regular file inside dist_root, or None.
+
+    The requested path is resolved (symlinks included) and must stay within
+    dist_root, so '../', absolute paths and symlink escapes can never reach
+    files such as .streamlit/secrets.toml or data/*.csv.
+    """
+    if not requested or "\x00" in requested:
+        return None
+    root = os.path.realpath(dist_root)
+    candidate = os.path.realpath(os.path.join(root, requested.lstrip("/")))
+    try:
+        if os.path.commonpath([root, candidate]) != root:
+            return None
+    except ValueError:
+        return None
+    return candidate if os.path.isfile(candidate) else None
+
+
 if os.path.isdir(FRONTEND_DIST):
     assets_dir = os.path.join(FRONTEND_DIST, "assets")
     if os.path.isdir(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    @app.get("/{full_path:path}")
-    def serve_spa(full_path: str):
-        if full_path.startswith("api/"):
-            raise HTTPException(status_code=404, detail="API route not found")
-        candidate = os.path.join(FRONTEND_DIST, full_path)
-        if full_path and os.path.isfile(candidate):
-            return FileResponse(candidate)
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+
+@app.get("/{full_path:path}")
+def serve_spa(full_path: str):
+    if full_path == "api" or full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="API route not found")
+    served = resolve_spa_file(FRONTEND_DIST, full_path) or resolve_spa_file(
+        FRONTEND_DIST, "index.html"
+    )
+    if served is None:
+        raise HTTPException(status_code=404, detail="Frontend not built")
+    return FileResponse(served)

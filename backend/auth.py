@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import secrets
+import threading
 import time
 import tomllib
 from typing import Any
@@ -16,8 +18,71 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COOKIE_NAME = "uk_expense_session"
 SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60  # 30 days
 
+# Failed-login throttle: MAX_FAILED_LOGINS failures within FAILURE_WINDOW_SECONDS
+# locks that client out for LOCKOUT_SECONDS. State is in memory (single worker).
+MAX_FAILED_LOGINS = 5
+FAILURE_WINDOW_SECONDS = 15 * 60
+LOCKOUT_SECONDS = 5 * 60
+_MAX_TRACKED_CLIENTS = 1024
+
 # Ephemeral fallback signing key if no auth password is configured
 _FALLBACK_SIGNING_SECRET = secrets.token_hex(32)
+
+# client key -> [failure_count, first_failure_at, locked_until]
+_login_failures: dict[str, list[float]] = {}
+_login_failures_lock = threading.Lock()
+
+
+def _now() -> float:
+    """Monotonic clock for throttle timing (patched in tests)."""
+    return time.monotonic()
+
+
+def compare_text(left: str, right: str) -> bool:
+    """Constant-time string comparison that is safe for non-ASCII input."""
+    return secrets.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
+
+
+def reset_login_throttle() -> None:
+    """Forget all recorded login failures."""
+    with _login_failures_lock:
+        _login_failures.clear()
+
+
+def check_login_throttle(client_key: str) -> int:
+    """Return seconds the client must wait before another attempt, or 0 if allowed."""
+    now = _now()
+    with _login_failures_lock:
+        entry = _login_failures.get(client_key)
+        if entry is None:
+            return 0
+        _, first_failure_at, locked_until = entry
+        if locked_until > now:
+            return max(1, math.ceil(locked_until - now))
+        if locked_until or now - first_failure_at > FAILURE_WINDOW_SECONDS:
+            del _login_failures[client_key]
+        return 0
+
+
+def record_login_failure(client_key: str) -> None:
+    """Count a failed attempt and start a lockout once the limit is reached."""
+    now = _now()
+    with _login_failures_lock:
+        if len(_login_failures) >= _MAX_TRACKED_CLIENTS and client_key not in _login_failures:
+            _login_failures.clear()
+        entry = _login_failures.get(client_key)
+        if entry is None or now - entry[1] > FAILURE_WINDOW_SECONDS:
+            entry = [0.0, now, 0.0]
+            _login_failures[client_key] = entry
+        entry[0] += 1
+        if entry[0] >= MAX_FAILED_LOGINS:
+            entry[2] = now + LOCKOUT_SECONDS
+
+
+def record_login_success(client_key: str) -> None:
+    """Clear the failure history for a client after a successful login."""
+    with _login_failures_lock:
+        _login_failures.pop(client_key, None)
 
 
 def is_truthy(value: object) -> bool:
@@ -129,11 +194,11 @@ def verify_session_token(token: str | None) -> str | None:
 
     payload = f"{username}|{exp_str}"
     expected_sig = hmac.new(_get_signing_key(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(sig, expected_sig):
+    if not compare_text(sig, expected_sig):
         return None
 
     valid_user, _, _ = get_auth_credentials()
-    if not valid_user or not secrets.compare_digest(username, valid_user):
+    if not valid_user or not compare_text(username, valid_user):
         return None
     return username
 

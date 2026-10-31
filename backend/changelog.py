@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.8.1"
+APP_VERSION = "0.8.2"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.8.2",
+        "date": "31 Oct 2026",
+        "title": "Security Hardening: Static File Access, API Docs & Login Protection",
+        "changes": [
+            "Fixed a flaw that let anyone who could reach the app download files outside the web folder (including settings, secrets and transaction data) without logging in.",
+            "Turned off the public API documentation pages in production.",
+            "Added a temporary lockout after 5 failed login attempts and made non-standard characters in credentials return a normal 'incorrect' error.",
+            "Session cookies are now marked Secure automatically when the app is served over HTTPS (or when EXPENSE_TRACKER_COOKIE_SECURE is set).",
+        ],
+    },
     {
         "version": "0.8.1",
         "date": "24 Oct 2026",
