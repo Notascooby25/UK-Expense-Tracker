@@ -1104,7 +1104,7 @@ def save_wealth_balances(
         cleaned_assets = {
             clean_string(k): round(float(v), 2)
             for k, v in raw_assets.items()
-            if clean_string(k) and v is not None and float(v) > 0
+            if clean_string(k) and v is not None and float(v) >= 0
         }
         if cleaned_assets:
             assets_data[snapshot_key] = cleaned_assets

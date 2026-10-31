@@ -324,11 +324,11 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
     try {
       const numericAssetPayload: Record<string, number> = {};
       Object.entries(assetBalances).forEach(([asset, val]) => {
-        if (typeof val === 'number' && val > 0) {
+        if (typeof val === 'number' && val >= 0) {
           numericAssetPayload[asset] = val;
         } else if (typeof val === 'string' && val.trim() !== '') {
           const num = parseFloat(val);
-          if (!isNaN(num) && num > 0) numericAssetPayload[asset] = num;
+          if (!isNaN(num) && num >= 0) numericAssetPayload[asset] = num;
         }
       });
 
@@ -385,11 +385,11 @@ export const WealthPage: React.FC<WealthPageProps> = ({ scope }) => {
       const monthAssetRow = modalMonthEdits[month] || {};
       const numericAssets: Record<string, number> = {};
       Object.entries(monthAssetRow).forEach(([asset, val]) => {
-        if (typeof val === 'number' && val > 0) {
+        if (typeof val === 'number' && val >= 0) {
           numericAssets[asset] = val;
         } else if (typeof val === 'string' && val.trim() !== '') {
           const num = parseFloat(val);
-          if (!isNaN(num) && num > 0) numericAssets[asset] = num;
+          if (!isNaN(num) && num >= 0) numericAssets[asset] = num;
         }
       });
 

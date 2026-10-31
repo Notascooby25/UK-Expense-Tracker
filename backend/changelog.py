@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.8.5"
+APP_VERSION = "0.8.6"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.8.6",
+        "date": "31 Oct 2026",
+        "title": "Closed Accounts & Safer Handling of Odd Dates",
+        "changes": [
+            "You can now record an asset balance of 0 on the Wealth page. Previously a 0 was silently ignored, so a closed or emptied account kept its old balance and overstated your net worth. Leaving the field blank still means 'carry the previous balance forward'.",
+            "Transactions whose date is written as 2026-01-06, 06/01/26 or 6 Jan 2026 are now read correctly instead of disappearing on the next save. Normal DD/MM/YYYY dates are read exactly as before, and are re-saved in that format.",
+            "Rows whose date cannot be read at all are no longer deleted on the next save. They are set aside, unchanged, in expense_database.rejected.csv next to the main file, and Settings shows a note when this has happened.",
+        ],
+    },
     {
         "version": "0.8.5",
         "date": "31 Oct 2026",

@@ -236,6 +236,26 @@ def clean_string(val: object) -> str:
     return "" if s.lower() in {"nan", "none", "nat", "null"} else s
 
 
+def parse_db_dates(values: pd.Series) -> pd.Series:
+    """Parse the Date column of a transactions CSV, tolerating hand-edited formats.
+
+    The file format is DD/MM/YYYY and is tried first, so day-first dates are never
+    misread. Only values that fail it are retried as ISO (2026-01-06) and then as
+    loose day-first text (6 Jan 2026, 06/01/26). Anything still unreadable is NaT.
+    """
+    text = values.astype(str).str.strip()
+    out = pd.to_datetime(text, format="%d/%m/%Y", errors="coerce")
+    missing = out.isna()
+    if missing.any():
+        out.loc[missing] = pd.to_datetime(text[missing], format="ISO8601", errors="coerce")
+        missing = out.isna()
+    if missing.any():
+        out.loc[missing] = pd.to_datetime(
+            text[missing], dayfirst=True, errors="coerce", format="mixed"
+        )
+    return out.dt.normalize()
+
+
 def transaction_fingerprint(date_value: object, name: object, amount: object) -> str:
     """Return a transaction's identity as 'YYYY-MM-DD|Name|0.00'.
 
@@ -410,7 +430,7 @@ def load_assets(scope: str) -> dict[str, dict[str, float]]:
             cleaned[str(month)] = {
                 str(k): round(float(v), 2)
                 for k, v in balances.items()
-                if v is not None and float(v) > 0
+                if v is not None and float(v) >= 0
             }
     return cleaned
 
@@ -637,7 +657,7 @@ def load_transactions(scope: str) -> pd.DataFrame:
             if col not in df.columns:
                 df[col] = False if col in {"Is_Subscription", "Is_Exceptional"} else ""
 
-        df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.normalize()
+        df["Date"] = parse_db_dates(df["Date"])
         df = df.dropna(subset=["Date"]).copy()
         df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0.0).abs().round(2)
 
@@ -719,6 +739,8 @@ def _keep_previous_version(db_path: str, new_rows: int) -> None:
     except OSError as exc:
         logger.error("Could not write safety copy %s.bak: %s", db_path, exc)
 
+    _set_aside_unreadable_rows(db_path, previous)
+
     try:
         old_rows = len(pd.read_csv(io.BytesIO(previous), encoding="utf-8"))
     except Exception:
@@ -731,6 +753,48 @@ def _keep_previous_version(db_path: str, new_rows: int) -> None:
             os.path.basename(db_path),
             db_path,
         )
+
+
+def rejected_rows_path(db_path: str) -> str:
+    """Path of the file that holds rows whose date could not be read."""
+    return os.path.splitext(db_path)[0] + ".rejected.csv"
+
+
+def _read_csv_text(raw: bytes) -> pd.DataFrame:
+    """Read CSV bytes as strings without altering any value (no NA conversion)."""
+    try:
+        return pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False, encoding="utf-8")
+    except UnicodeDecodeError:
+        return pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False, encoding="ISO-8859-1")
+
+
+def _set_aside_unreadable_rows(db_path: str, previous: bytes) -> None:
+    """Append rows whose Date cannot be read to '<name>.rejected.csv', unchanged.
+
+    load_transactions leaves such rows out, so the next save would otherwise delete
+    them from the main file without trace. They are rows that already exist in the
+    file being replaced, so each one is set aside exactly once.
+    """
+    try:
+        old = _read_csv_text(previous)
+        if old.empty or "Date" not in old.columns:
+            return
+        bad = old[parse_db_dates(old["Date"]).isna()]
+        if bad.empty:
+            return
+        path = rejected_rows_path(db_path)
+        combined = bad
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                combined = pd.concat([_read_csv_text(f.read()), bad], ignore_index=True)
+        atomic_write_bytes(path, combined.to_csv(index=False).encode("utf-8"))
+        logger.warning(
+            "Set aside %d row(s) with an unreadable date in %s",
+            len(bad),
+            os.path.basename(path),
+        )
+    except Exception as exc:  # never let this block the save itself
+        logger.error("Could not set aside unreadable rows from %s: %s", db_path, exc)
 
 
 def get_pure_monzo_categories(df: pd.DataFrame) -> set[str]:
@@ -1146,6 +1210,18 @@ def get_startup_health(
             notes.append(f"{label} will initialize from template on first save: {runtime_file}")
         else:
             errors.append(f"{label} file missing: {runtime_file}")
+
+    rejected_path = rejected_rows_path(paths["db"])
+    if os.path.exists(rejected_path):
+        try:
+            with open(rejected_path, "rb") as f:
+                count = len(_read_csv_text(f.read()))
+            notes.append(
+                f"{count} row(s) with an unreadable date were set aside in "
+                f"{os.path.basename(rejected_path)}; they are not shown in the app."
+            )
+        except Exception:
+            notes.append(f"Unreadable rows were set aside in {os.path.basename(rejected_path)}.")
 
     if not has_auth_secrets:
         if require_auth_secrets:
