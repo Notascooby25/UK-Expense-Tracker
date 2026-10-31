@@ -17,6 +17,30 @@ import {
   MortgageSummary,
 } from './types';
 
+/** Error carrying the HTTP status, so callers can react to e.g. 409 (stale data). */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/** True when the server refused an edit because the row changed since it was loaded. */
+export function isStaleRowError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 409;
+}
+
+/**
+ * Identity of a transaction as the server computes it ('YYYY-MM-DD|Name|0.00').
+ * Sent with edits so the server can refuse them if the row has moved or changed.
+ */
+export function rowFingerprint(row: { Date: string; Name: string; Amount: number }): string {
+  return `${row.Date}|${(row.Name ?? '').trim()}|${Number(row.Amount).toFixed(2)}`;
+}
+
 async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     credentials: 'include',
@@ -35,7 +59,7 @@ async function requestJson<T>(url: string, options?: RequestInit): Promise<T> {
     } catch {
       // ignore JSON parse error
     }
-    throw new Error(detail);
+    throw new ApiError(detail, res.status);
   }
   return res.json() as Promise<T>;
 }
@@ -249,13 +273,14 @@ export const api = {
       Notes: string;
       Is_Subscription: boolean;
       Is_Exceptional: boolean;
-    }>
+    }>,
+    expect?: string
   ) {
     return requestJson<{ saved: boolean; row: TransactionRow }>(
       `/api/transactions/${rowId}?scope=${encodeURIComponent(scope)}`,
       {
         method: 'PATCH',
-        body: JSON.stringify(patch),
+        body: JSON.stringify(expect ? { ...patch, expect } : patch),
       }
     );
   },
@@ -269,6 +294,8 @@ export const api = {
       transaction_type?: string;
       is_subscription?: boolean;
       is_exceptional?: boolean;
+      /** row_id -> fingerprint; any mismatch makes the server refuse the whole request. */
+      expects?: Record<string, string>;
     }
   ) {
     return requestJson<{ saved: boolean; affected: number; total: number }>(

@@ -30,7 +30,7 @@ import {
   CartesianGrid,
   Legend,
 } from 'recharts';
-import { api } from '../api';
+import { api, isStaleRowError, rowFingerprint } from '../api';
 import {
   AccountScope,
   DashboardPayload,
@@ -461,15 +461,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     setDrilldownSaveStatus('Saving...');
     setDrilldownError(null);
     try {
-      await api.patchTransaction(scope, rowId, { Category: newCategory });
+      const shown = drilldown?.transactions.find((t) => t.row_id === rowId);
+      await api.patchTransaction(
+        scope,
+        rowId,
+        { Category: newCategory },
+        shown ? rowFingerprint(shown) : undefined
+      );
       setDrilldownSaveStatus('Category updated');
       setTimeout(() => {
         setDrilldownSaveStatus((cur) => (cur === 'Category updated' ? null : cur));
       }, 2500);
       await fetchDashboard();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to update category';
+      const msg = isStaleRowError(err)
+        ? 'This transaction changed since the list loaded. Refreshing - nothing was changed.'
+        : err instanceof Error
+          ? err.message
+          : 'Failed to update category';
       setDrilldownError(msg);
+      if (isStaleRowError(err)) void fetchDashboard();
       setDrilldownSaveStatus(null);
     }
   };

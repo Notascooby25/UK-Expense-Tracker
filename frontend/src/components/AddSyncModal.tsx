@@ -8,7 +8,7 @@ import {
   AlertCircle,
   Upload,
 } from 'lucide-react';
-import { api } from '../api';
+import { api, rowFingerprint } from '../api';
 import { AccountScope, AppSettings, SyncConflict, TransactionRow } from '../types';
 
 interface AddSyncModalProps {
@@ -244,7 +244,13 @@ export const AddSyncModal: React.FC<AddSyncModalProps> = ({
     patch: Partial<{ Category: string; Notes: string; Is_Subscription: boolean }>
   ) => {
     try {
-      const res = await api.patchTransaction(scope, rowId, patch);
+      const shown = reviewRows.find((r) => r.row_id === rowId);
+      const res = await api.patchTransaction(
+        scope,
+        rowId,
+        patch,
+        shown ? rowFingerprint(shown) : undefined
+      );
       setReviewRows((prev) => prev.map((r) => (r.row_id === rowId ? res.row : r)));
       onDataChanged('Updated synced transaction and auto-saved');
     } catch (err) {

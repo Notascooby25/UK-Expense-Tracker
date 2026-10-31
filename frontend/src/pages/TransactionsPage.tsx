@@ -15,7 +15,7 @@ import {
   Tag,
   Repeat,
 } from 'lucide-react';
-import { api } from '../api';
+import { api, isStaleRowError, rowFingerprint } from '../api';
 import {
   AccountScope,
   FilterPreset,
@@ -328,21 +328,52 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
     setTimeout(() => setSaveStatus(null), 2500);
   };
 
+  // Fingerprints of the rows as currently displayed, so the server can refuse an edit
+  // aimed at a row that moved (row ids are positions and shift when a row is deleted).
+  const expectsFor = (ids: number[]): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const id of ids) {
+      const row = rows.find((r) => r.row_id === id);
+      if (row) out[String(id)] = rowFingerprint(row);
+    }
+    return out;
+  };
+
+  // On a stale-data refusal: say so, drop the selection and reload. Returns true if handled.
+  const handleStale = (err: unknown): boolean => {
+    if (!isStaleRowError(err)) return false;
+    alert(
+      'These transactions changed since this page loaded (for example on another device). ' +
+        'The list has been refreshed - nothing was changed. Please check and try again.'
+    );
+    setSelectedIds(new Set());
+    loadTransactions();
+    return true;
+  };
+
   // Inline patch cell
   const handleInlineChange = async (
     rowId: number,
     field: keyof TransactionRow,
     value: string | number | boolean
   ) => {
+    const original = rows.find((r) => r.row_id === rowId);
+
     // Optimistic UI update
     setRows((prev) =>
       prev.map((r) => (r.row_id === rowId ? { ...r, [field]: value } : r))
     );
 
     try {
-      await api.patchTransaction(scope, rowId, { [field]: value });
+      await api.patchTransaction(
+        scope,
+        rowId,
+        { [field]: value },
+        original ? rowFingerprint(original) : undefined
+      );
       triggerSaveIndicator('Saved');
     } catch (err: unknown) {
+      if (handleStale(err)) return;
       const msg = err instanceof Error ? err.message : 'Failed to update transaction';
       setError(msg);
       // Re-sync with backend on error
@@ -354,7 +385,11 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
   const handleDeleteRow = async (rowId: number, merchant: string) => {
     if (!window.confirm(`Delete transaction for "${merchant}"?`)) return;
     try {
-      await api.bulkUpdateTransactions(scope, { action: 'delete', row_ids: [rowId] });
+      await api.bulkUpdateTransactions(scope, {
+        action: 'delete',
+        row_ids: [rowId],
+        expects: expectsFor([rowId]),
+      });
       setSelectedIds((prev) => {
         const next = new Set(prev);
         next.delete(rowId);
@@ -363,6 +398,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       loadTransactions();
       triggerSaveIndicator('Deleted');
     } catch (err: unknown) {
+      if (handleStale(err)) return;
       alert(err instanceof Error ? err.message : 'Failed to delete transaction');
     }
   };
@@ -413,6 +449,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       await api.bulkUpdateTransactions(scope, {
         action: 'update',
         row_ids: Array.from(selectedIds),
+        expects: expectsFor(Array.from(selectedIds)),
         category: bulkCategory,
       });
       triggerSaveIndicator(`Updated category on ${selectedIds.size} rows`);
@@ -420,6 +457,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       setBulkCategory('');
       loadTransactions();
     } catch (err: unknown) {
+      if (handleStale(err)) return;
       alert(err instanceof Error ? err.message : 'Bulk update failed');
     }
   };
@@ -430,6 +468,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       await api.bulkUpdateTransactions(scope, {
         action: 'update',
         row_ids: Array.from(selectedIds),
+        expects: expectsFor(Array.from(selectedIds)),
         transaction_type: bulkType,
       });
       triggerSaveIndicator(`Updated type on ${selectedIds.size} rows`);
@@ -437,6 +476,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       setBulkType('');
       loadTransactions();
     } catch (err: unknown) {
+      if (handleStale(err)) return;
       alert(err instanceof Error ? err.message : 'Bulk update failed');
     }
   };
@@ -447,12 +487,14 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       await api.bulkUpdateTransactions(scope, {
         action: 'update',
         row_ids: Array.from(selectedIds),
+        expects: expectsFor(Array.from(selectedIds)),
         is_subscription: isSub,
       });
       triggerSaveIndicator(`Updated subscription flag on ${selectedIds.size} rows`);
       setSelectedIds(new Set());
       loadTransactions();
     } catch (err: unknown) {
+      if (handleStale(err)) return;
       alert(err instanceof Error ? err.message : 'Bulk update failed');
     }
   };
@@ -463,6 +505,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       await api.bulkUpdateTransactions(scope, {
         action: 'update',
         row_ids: Array.from(selectedIds),
+        expects: expectsFor(Array.from(selectedIds)),
         is_exceptional: isExceptional,
       });
       triggerSaveIndicator(
@@ -471,6 +514,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       setSelectedIds(new Set());
       loadTransactions();
     } catch (err: unknown) {
+      if (handleStale(err)) return;
       alert(err instanceof Error ? err.message : 'Bulk update failed');
     }
   };
@@ -487,11 +531,13 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({
       await api.bulkUpdateTransactions(scope, {
         action: 'delete',
         row_ids: Array.from(selectedIds),
+        expects: expectsFor(Array.from(selectedIds)),
       });
       triggerSaveIndicator(`Deleted ${selectedIds.size} rows`);
       setSelectedIds(new Set());
       loadTransactions();
     } catch (err: unknown) {
+      if (handleStale(err)) return;
       alert(err instanceof Error ? err.message : 'Bulk delete failed');
     }
   };

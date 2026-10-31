@@ -16,7 +16,7 @@ import {
   Clock,
   ArrowUpRight,
 } from 'lucide-react';
-import { api } from '../api';
+import { api, isStaleRowError } from '../api';
 import { AccountScope, IntelligencePayload } from '../types';
 
 interface IntelligencePageProps {
@@ -85,6 +85,13 @@ export const IntelligencePage: React.FC<IntelligencePageProps> = ({
       triggerStatus('Action executed successfully');
       if (onRefreshBootstrap) onRefreshBootstrap();
     } catch (err: unknown) {
+      if (isStaleRowError(err)) {
+        alert(
+          'That transaction changed since this list was scanned. The list has been refreshed - nothing was changed.'
+        );
+        loadIntelligence();
+        return;
+      }
       alert(err instanceof Error ? err.message : 'Action failed');
     }
   };
@@ -317,6 +324,7 @@ export const IntelligencePage: React.FC<IntelligencePageProps> = ({
                             handleAction({
                               action: 'mark_one_off',
                               row_id: cand.row_id,
+                              signature: cand.signature,
                             })
                           }
                           className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-semibold transition-colors flex items-center gap-1 shadow-sm"

@@ -236,6 +236,22 @@ def clean_string(val: object) -> str:
     return "" if s.lower() in {"nan", "none", "nat", "null"} else s
 
 
+def transaction_fingerprint(date_value: object, name: object, amount: object) -> str:
+    """Return a transaction's identity as 'YYYY-MM-DD|Name|0.00'.
+
+    Row ids are positions in the CSV, so they shift whenever a row is deleted. A client
+    that sends the fingerprint it last saw lets the server refuse an edit aimed at a row
+    that has since moved. Same format as the Intelligence signatures.
+    """
+    ts = pd.to_datetime(date_value, errors="coerce")
+    date_part = ts.strftime("%Y-%m-%d") if pd.notna(ts) else ""
+    try:
+        amt = round(float(amount), 2)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        amt = 0.0
+    return f"{date_part}|{clean_string(name)}|{amt:.2f}"
+
+
 def calculate_uk_financial_year(date_obj: object) -> str:
     """Calculate UK Financial Year (6 April boundary) in 'YYYY-YYYY' format."""
     if date_obj is None or pd.isna(date_obj):

@@ -75,6 +75,7 @@ from backend.storage import (
     save_transactions,
     serialized,
     storage_txn,
+    transaction_fingerprint,
     update_mortgage_profile,
 )
 from backend.mortgage_utils import (
@@ -122,11 +123,16 @@ class TransactionPatchRequest(BaseModel):
     Notes: str | None = None
     Is_Subscription: bool | None = None
     Is_Exceptional: bool | None = None
+    # Fingerprint of the row as the client last saw it ('YYYY-MM-DD|Name|0.00').
+    # When present, the edit is refused with 409 if the row at row_id has changed.
+    expect: str | None = None
 
 
 class BulkTransactionsRequest(BaseModel):
     action: str  # "update" or "delete"
     row_ids: list[int] = Field(default_factory=list)
+    # Optional row_id -> fingerprint map; any mismatch refuses the whole request.
+    expects: dict[str, str] | None = None
     category: str | None = None
     transaction_type: str | None = None
     is_subscription: bool | None = None
@@ -259,6 +265,20 @@ def _serialize_tx_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+STALE_ROW_DETAIL = "This transaction has changed since you loaded this page. Refresh and try again."
+
+
+def _require_fresh_row(df: pd.DataFrame, row_id: int, expected: str | None) -> None:
+    """Raise 409 if the row at row_id no longer matches the fingerprint the client saw."""
+    if expected is None:
+        return
+    if not 0 <= row_id < len(df):
+        raise HTTPException(status_code=409, detail=STALE_ROW_DETAIL)
+    row = df.iloc[row_id]
+    if transaction_fingerprint(row["Date"], row["Name"], row["Amount"]) != expected:
+        raise HTTPException(status_code=409, detail=STALE_ROW_DETAIL)
 
 
 def _serialize_new_rows(merged_df: pd.DataFrame, new_rows_df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -716,6 +736,7 @@ def patch_transaction(
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
+    _require_fresh_row(df, row_id, payload.expect)
     if row_id < 0 or row_id >= len(df):
         raise HTTPException(status_code=404, detail="Transaction row not found.")
 
@@ -757,6 +778,10 @@ def bulk_update_transactions(
 ) -> dict[str, Any]:
     norm_scope = normalize_scope(scope)
     df = load_transactions(norm_scope)
+    if payload.expects:
+        # Check every guarded row before changing anything: all or nothing.
+        for rid in payload.row_ids:
+            _require_fresh_row(df, rid, payload.expects.get(str(rid)))
     valid_ids = [idx for idx in payload.row_ids if 0 <= idx < len(df)]
     if not valid_ids:
         return {"saved": False, "affected": 0}
@@ -1019,6 +1044,8 @@ def execute_intelligence_action(
         save_settings(norm_scope, settings)
 
     elif action == "mark_one_off":
+        if payload.row_id is not None and payload.signature:
+            _require_fresh_row(df, payload.row_id, payload.signature)
         if payload.row_id is not None and 0 <= payload.row_id < len(df):
             df.at[payload.row_id, "Is_Exceptional"] = True
             save_transactions(norm_scope, df)

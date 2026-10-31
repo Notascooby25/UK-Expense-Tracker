@@ -4,9 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.8.4"
+APP_VERSION = "0.8.5"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.8.5",
+        "date": "31 Oct 2026",
+        "title": "Stale-Screen Protection: Edits Can No Longer Hit the Wrong Transaction",
+        "changes": [
+            "Transactions are identified internally by their position in the file, so deleting a row on one device shifted every row after it. A second device still showing the old list could then edit or delete the wrong transaction.",
+            "Edits, bulk updates, deletes, the dashboard category picker, the sync review list and 'Mark as One-Off' now send the date, name and amount of the row you were looking at. If the row has changed, the server refuses with a clear message, changes nothing, and the page refreshes.",
+            "Bulk actions are all-or-nothing: if any selected row is stale, none are changed.",
+            "After updating, refresh the page once (or close and reopen the app on your phone) so it loads the new version.",
+        ],
+    },
     {
         "version": "0.8.4",
         "date": "31 Oct 2026",
