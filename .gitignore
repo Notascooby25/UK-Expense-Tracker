@@ -12,6 +12,7 @@ venv/
 .streamlit/New Document.txt
 
 # Local runtime data (personal)
+logs/*.log
 data/**
 !data/.gitkeep
 expense_database*.csv

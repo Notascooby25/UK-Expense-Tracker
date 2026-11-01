@@ -68,10 +68,12 @@ def test_dashboard_excludes_individual_exceptional_transactions():
     """Verify individual Is_Exceptional transactions are excluded from dashboard and tracked in summary."""
     from backend.analytics import prepare_filtered_dashboard_df
 
+    # "This Month" compares against today, so these rows must always be this month.
+    today = pd.Timestamp.now().normalize()
     df = pd.DataFrame(
         [
             {
-                "Date": pd.Timestamp("2026-10-05"),
+                "Date": today,
                 "Name": "Pret A Manger",
                 "Amount": 4.50,
                 "Transaction_Type": "Expense",
@@ -83,7 +85,7 @@ def test_dashboard_excludes_individual_exceptional_transactions():
                 "Is_Exceptional": False,
             },
             {
-                "Date": pd.Timestamp("2026-10-10"),
+                "Date": today,
                 "Name": "Apple Store",
                 "Amount": 799.00,
                 "Transaction_Type": "Expense",

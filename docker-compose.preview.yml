@@ -1,0 +1,24 @@
+# A private copy of the app on the owner's PC, for trying a branch before it
+# goes live. Started by scripts/preview.sh, never by hand. Built from the
+# production Dockerfile. It uses its own copy of the data and a throwaway login,
+# and has no Google Sheets or other outside credentials.
+name: expense-tracker-preview
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "${PREVIEW_BIND:-127.0.0.1}:18502:8502"
+    environment:
+      - EXPENSE_TRACKER_DATA_DIR=/app/data
+      - EXPENSE_TRACKER_ENV=production
+    volumes:
+      - ${PREVIEW_DATA_DIR:-/nonexistent}/data:/app/data:Z
+      - ${PREVIEW_DATA_DIR:-/nonexistent}/secrets.toml:/app/.streamlit/secrets.toml:ro,Z
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8502/api/auth/status')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30

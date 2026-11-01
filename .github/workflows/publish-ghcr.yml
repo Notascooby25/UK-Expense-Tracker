@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - master
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +15,13 @@ permissions:
   packages: write
 
 jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
   publish:
+    needs: checks
+    # Manual runs too: only main may ever publish or deploy.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -77,6 +86,7 @@ jobs:
   deploy:
     name: Deploy to NUC
     needs: publish
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Check SSH configuration

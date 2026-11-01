@@ -81,7 +81,7 @@ Because debt is not tracked against assets, the reported "Total Net Worth" gives
 ### 4.4 Frontend UI (`frontend/src/pages/WealthPage.tsx`)
 1. **Headline Metric Cards (`grid-cols-1 md:grid-cols-4` or stacked on mobile):**
    - **Total Net Worth:** Displays true net worth (`£ Assets - £ Debt`). Subtitle shows `Total Assets: £X — Debt: £Y`.
-   - **Outstanding Loan (Shown when debts exist):** Styled in slate container with warm accent for the balance. Shows `£4,850.00`, a progress bar, and subtitle `Original: £5,000 • Repaid: £150 (3%)`. If multiple loans exist, aggregates to total debt with percentage repaid.
+   - **Outstanding Loan (Shown when debts exist):** Styled in slate container with warm accent for the balance. Shows `£1,000.00`, a progress bar, and subtitle `Original: £5,000 • Repaid: £150 (3%)`. If multiple loans exist, aggregates to total debt with percentage repaid.
    - **Monthly Change:** Delta vs previous recorded snapshot.
    - **Accounts Tracked:** Count of active asset and debt accounts.
 2. **Wealth Balance Logger:**

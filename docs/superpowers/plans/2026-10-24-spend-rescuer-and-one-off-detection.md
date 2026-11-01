@@ -22,7 +22,7 @@
 ## Review Focus
 - **CSV Schema Compatibility:** Loading an existing CSV missing `Is_Exceptional` must default to `False` and not fail or alter existing data.
 - **Dual-App Persistence:** Streamlit (`app.py`) must include `Is_Exceptional` in `COLS` so saving from Streamlit never silently drops the column.
-- **Dismissal Granularity:** Dismissing a spike at Currys must record `f"{date}|{name}|{amount}"`, only silencing that specific purchase and not future ones at Currys.
+- **Dismissal Granularity:** Dismissing a spike at Example Store must record `f"{date}|{name}|{amount}"`, only silencing that specific purchase and not future ones at Example Store.
 - **Trivial Leak Filtering:** Discretionary leak scanner must require at least 3 transactions in the active period so a single coffee from months ago doesn't generate a false savings habit.
 - **Dashboard Metric Accuracy:** Excluded one-off items must reduce `variable_expenses` and `avg_baseline` on the dashboard, while keeping net cash flow accurate.
 
