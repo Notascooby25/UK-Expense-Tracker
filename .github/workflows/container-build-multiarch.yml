@@ -33,5 +33,18 @@ jobs:
           push: false
           provenance: false
           tags: expense-tracker:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=streamlit
+          cache-to: type=gha,mode=max,scope=streamlit
+
+      # The React + FastAPI app is the primary one, so a pull request must build it too.
+      - name: Build React + FastAPI (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.web
+          platforms: linux/amd64
+          push: false
+          provenance: false
+          tags: expense-tracker-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web

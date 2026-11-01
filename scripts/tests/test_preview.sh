@@ -11,6 +11,8 @@ SCRIPT="$ROOT/scripts/preview.sh"
 # shellcheck source=/dev/null
 . "$HERE/lib.sh"
 
+BASE_PATH=$PATH
+
 setup() {
     T=$(mktemp -d)
     export HOME="$T/home"
@@ -44,7 +46,8 @@ case "\${FAKE_SSH_MODE:-ok}" in
 esac
 EOF
     chmod +x "$T/bin/docker" "$T/bin/ssh"
-    export PATH="$T/bin:$PATH"
+    # From a clean PATH, so one test's stand-ins can't leak into the next.
+    export PATH="$T/bin:$BASE_PATH"
     unset DOCKER_HOST PREVIEW_DATA_DIR FAKE_SSH_MODE
 }
 
@@ -86,6 +89,22 @@ for mode in partial truncated empty; do
     check "$mode: no temp file left" test ! -e "$DATA/data.tar.partial"
     check "$mode: nothing started" test ! -e "$T/docker.log"
 done
+
+echo "a copy that fails while unpacking is never used"
+setup
+cat > "$T/bin/tar" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  *-xf*) /usr/bin/tar "\$@"; exit 2 ;;
+  *) exec /usr/bin/tar "\$@" ;;
+esac
+EOF
+chmod +x "$T/bin/tar"
+run up; rc=$?
+check "exits non-zero" test "$rc" -ne 0
+check "no data left" test ! -e "$DATA/data"
+check "no unpacking folder left" test ! -e "$DATA/data.unpacking"
+check "nothing started" test ! -e "$T/docker.log"
 
 echo "refuses a remote docker"
 setup
