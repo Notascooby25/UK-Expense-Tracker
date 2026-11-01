@@ -87,6 +87,22 @@ for mode in partial truncated empty; do
     check "$mode: nothing started" test ! -e "$T/docker.log"
 done
 
+echo "a copy that fails while unpacking is never used"
+setup
+cat > "$T/bin/tar" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  *-xf*) /usr/bin/tar "\$@"; exit 2 ;;
+  *) exec /usr/bin/tar "\$@" ;;
+esac
+EOF
+chmod +x "$T/bin/tar"
+run up; rc=$?
+check "exits non-zero" test "$rc" -ne 0
+check "no data left" test ! -e "$DATA/data"
+check "no unpacking folder left" test ! -e "$DATA/data.unpacking"
+check "nothing started" test ! -e "$T/docker.log"
+
 echo "refuses a remote docker"
 setup
 DOCKER_HOST=tcp://10.0.0.9:2375 run up; rc=$?

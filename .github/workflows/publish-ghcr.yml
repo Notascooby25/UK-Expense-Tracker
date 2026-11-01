@@ -37,6 +37,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build both first, so a failed build can't leave one app updated and not the other.
+      - name: Build both images before pushing either
+        run: |
+          docker buildx build --file ./Dockerfile --cache-from type=gha,scope=streamlit --cache-to type=gha,mode=max,scope=streamlit .
+          docker buildx build --file ./Dockerfile.web --cache-from type=gha,scope=web --cache-to type=gha,mode=max,scope=web .
+
       # Streamlit Container
       - name: Extract metadata (Streamlit)
         id: meta-streamlit

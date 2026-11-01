@@ -52,8 +52,16 @@ copy_live_data() {
         rm -f "$partial"
         die "couldn't copy live data, so nothing was started. Check the server is reachable."
     fi
-    tar -C "$DATA_DIR" -xf "$partial"
-    rm -f "$partial"
+    # Unpack beside the final folder, so an interrupted copy is never mistaken for a good one.
+    local unpacking="$DATA_DIR/data.unpacking"
+    rm -rf -- "$unpacking"
+    mkdir -p "$unpacking"
+    if ! tar -C "$unpacking" -xf "$partial"; then
+        rm -rf -- "$unpacking" "$partial"
+        die "couldn't unpack the copy of live data, so nothing was started."
+    fi
+    mv "$unpacking/data" "$DATA_DIR/data"
+    rm -rf -- "$unpacking" "$partial"
 }
 
 write_secrets() {
