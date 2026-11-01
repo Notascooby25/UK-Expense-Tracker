@@ -11,6 +11,8 @@ SCRIPT="$ROOT/scripts/preview.sh"
 # shellcheck source=/dev/null
 . "$HERE/lib.sh"
 
+BASE_PATH=$PATH
+
 setup() {
     T=$(mktemp -d)
     export HOME="$T/home"
@@ -44,7 +46,8 @@ case "\${FAKE_SSH_MODE:-ok}" in
 esac
 EOF
     chmod +x "$T/bin/docker" "$T/bin/ssh"
-    export PATH="$T/bin:$PATH"
+    # From a clean PATH, so one test's stand-ins can't leak into the next.
+    export PATH="$T/bin:$BASE_PATH"
     unset DOCKER_HOST PREVIEW_DATA_DIR FAKE_SSH_MODE
 }
 
