@@ -1,4 +1,0 @@
-mkdir: cannot create directory ‘/srv/shared’: Permission denied
-ERROR: Cannot create output directory: /srv/shared/backups/expense_tracker
-mkdir: cannot create directory ‘/srv/shared’: Permission denied
-ERROR: Cannot create output directory: /srv/shared/backups/expense_tracker
