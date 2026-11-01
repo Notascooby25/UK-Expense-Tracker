@@ -68,7 +68,7 @@ A new top-level section: **Spend Helper & One-Off Audit**:
 1. **Time Horizon Selector:**
    - Dropdown or pill selector: `Current Year (2026)` (default), `Last 6 Months`, `Last 12 Months`, `2025`, `2024`, `All Time`.
 2. **Spike & One-Off Candidates:**
-   - Cards showing detected anomalies in the chosen period: e.g. *“Currys — £549.00 (Shopping, 12 Oct) — Unusually high for this category”*.
+   - Cards showing detected anomalies in the chosen period: e.g. *“Example Store — £123.45 (Shopping, 1 Jan) — Unusually high for this category”*.
    - Action buttons:
      - `Mark as One-Off`: Flags the transaction as `Is_Exceptional = True`.
      - `Keep Regular`: Dismisses the candidate using its unique signature (`date|name|amount`).
@@ -79,7 +79,7 @@ A new top-level section: **Spend Helper & One-Off Audit**:
 ### 3.3 Dashboard Page (`DashboardPage.tsx`)
 - When `Exclude Exceptional Spend` is enabled in the filter bar, transactions flagged with `Is_Exceptional == True` are automatically filtered out from the monthly spend metrics, run rates, and category distribution charts.
 - The exceptional spend banner at the top of the dashboard displays both category-level and individual one-off items:
-  - *“Excluded £650.00 in one-off project / replacement costs this month (e.g. Currys £549.00)”*.
+  - *“Excluded £200.00 in one-off project / replacement costs this month (e.g. Example Store £123.45)”*.
   - An **"Inspect One-Offs"** button takes the user directly to the Transactions Editor with the `One-Off` filter applied.
 
 ---
