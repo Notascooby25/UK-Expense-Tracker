@@ -25,7 +25,6 @@ setup() {
 PREVIEW_PROD_HOST=fake-host
 PREVIEW_PROD_USER=fake-user
 PREVIEW_LAN_ADDRESS=10.0.0.5
-PREVIEW_EXPENSE_PATH=/fake/path
 EOF
     cat > "$T/bin/docker" <<EOF
 #!/usr/bin/env bash
@@ -99,9 +98,6 @@ setup; rm "$HOME/.config/safe-change/preview.env"
 run up; rc=$?
 check "exits non-zero" test "$rc" -ne 0
 check "names the settings file" grep -q preview.env "$T/out.txt"
-setup; sed -i '/PREVIEW_EXPENSE_PATH/d' "$HOME/.config/safe-change/preview.env"
-run up; rc=$?
-check "needs the server folder" test "$rc" -ne 0
 
 echo "a good run"
 setup
@@ -109,7 +105,8 @@ run up; rc=$?
 check "exits cleanly" test "$rc" -eq 0
 check "every call names the preview project" every_compose_call_uses_preview_project
 check "server only asked for a copy" bash -c "[ \$(grep -c . '$T/ssh.log') -eq 1 ] && grep -q 'tar ' '$T/ssh.log'"
-check "server copy is read-only" bash -c "! grep -Eq 'rm |mv |>|docker ' '$T/ssh.log'"
+check "copy goes through the app container" grep -q 'docker exec uk_expense_tracker_web tar -C /app -cf - data' "$T/ssh.log"
+check "server copy is read-only" bash -c "! grep -Eq 'rm |mv |>|compose' '$T/ssh.log'"
 check "data unpacked" test -f "$DATA/data/expense_database.csv"
 check "PC link printed" grep -q "http://localhost:18502" "$T/out.txt"
 check "commit printed" grep -qi "commit" "$T/out.txt"

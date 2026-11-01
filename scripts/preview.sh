@@ -8,8 +8,9 @@
 #   scripts/preview.sh refresh-data  start again from a fresh copy of live data
 #
 # Server details live in ~/.config/safe-change/preview.env, never in this repo:
-#   PREVIEW_PROD_HOST, PREVIEW_PROD_USER, PREVIEW_EXPENSE_PATH, PREVIEW_LAN_ADDRESS (optional)
-# The live server is only ever asked to send a copy of its data folder.
+#   PREVIEW_PROD_HOST, PREVIEW_PROD_USER, PREVIEW_LAN_ADDRESS (optional)
+# The live server is only ever asked to send a copy of its data folder. That goes
+# through the app container, because the files are private to the container's user.
 set -euo pipefail
 
 PROJECT=expense-tracker-preview
@@ -19,6 +20,7 @@ export PREVIEW_DATA_DIR=${PREVIEW_DATA_DIR:-$PREVIEWS_ROOT/expense-tracker}
 DATA_DIR=$PREVIEW_DATA_DIR
 SETTINGS="$HOME/.config/safe-change/preview.env"
 SECRETS="$DATA_DIR/secrets.toml"
+PROD_CONTAINER=${PREVIEW_EXPENSE_CONTAINER:-uk_expense_tracker_web}
 PORT=18502
 
 die() { echo "Preview stopped: $*" >&2; exit 1; }
@@ -44,7 +46,7 @@ copy_live_data() {
     local partial="$DATA_DIR/data.tar.partial"
     echo "Copying live data (read-only)..."
     if ! ssh -o BatchMode=yes -o ConnectTimeout=10 "$PREVIEW_PROD_USER@$PREVIEW_PROD_HOST" \
-        "tar -C $PREVIEW_EXPENSE_PATH -cf - data" > "$partial" 2>/dev/null \
+        "docker exec $PROD_CONTAINER tar -C /app -cf - data" > "$partial" 2>/dev/null \
         || ! listing=$(tar -tf "$partial" 2>/dev/null) \
         || ! grep -Eq '^data/.*\.csv$' <<< "$listing"; then
         rm -f "$partial"
@@ -76,8 +78,8 @@ cmd_up() {
     [ -f "$SETTINGS" ] || die "add the server details to $SETTINGS first (see the top of this script)."
     # shellcheck disable=SC1090
     . "$SETTINGS"
-    if [ -z "${PREVIEW_PROD_HOST:-}" ] || [ -z "${PREVIEW_PROD_USER:-}" ] || [ -z "${PREVIEW_EXPENSE_PATH:-}" ]; then
-        die "$SETTINGS needs PREVIEW_PROD_HOST, PREVIEW_PROD_USER and PREVIEW_EXPENSE_PATH."
+    if [ -z "${PREVIEW_PROD_HOST:-}" ] || [ -z "${PREVIEW_PROD_USER:-}" ]; then
+        die "$SETTINGS needs PREVIEW_PROD_HOST and PREVIEW_PROD_USER."
     fi
     mkdir -p "$DATA_DIR"
     chmod 700 "$DATA_DIR"
