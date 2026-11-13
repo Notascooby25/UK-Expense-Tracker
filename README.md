@@ -311,6 +311,25 @@ The app also keeps the version of the transactions file from before the **last s
 or bulk delete straight away, stop the app and copy the `.bak` back. It holds only one
 generation: any later save replaces it, so rely on the nightly archives for anything older.
 
+### Rehearse a restore (safe, does not touch the app)
+
+`scripts/restore_data_backup.sh` restores an archive into a **new scratch folder** and checks it:
+the checksum, that it is a readable archive with `data/expense_database.csv`, that every member is
+a plain file or folder under `data/` (no links, special files, `..` paths or `secrets.toml`), that
+the CSV files have a header, data rows and consistent columns, and that every JSON file parses.
+It never writes to the live `data/` folder (it refuses a destination inside it) and does not stop
+the app. The destination's parent folder must already exist.
+
+```bash
+./scripts/restore_data_backup.sh --latest                  # newest archive in /srv/shared/backups
+./scripts/restore_data_backup.sh /path/to/expense_tracker_data_<timestamp>.tar.gz --dest /tmp/restore-check
+```
+
+You should see `RESTORE OK: <n> files, <rows> expense rows, restored to <folder>`. A failure prints
+`RESTORE FAILED:` with the reason and leaves nothing behind. Delete the scratch folder afterwards.
+Archives made before 2026-09-21 hold only the three main files and are still accepted. The
+behaviour is covered by `scripts/tests/test_restore_data_backup.sh`, which runs in CI.
+
 ### Restoring
 
 ```bash

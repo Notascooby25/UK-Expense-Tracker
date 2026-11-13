@@ -36,6 +36,7 @@ jobs:
         run: |
           bash scripts/tests/test_check_backup_fresh.sh
           bash scripts/tests/test_data_backup.sh
+          bash scripts/tests/test_restore_data_backup.sh
           bash scripts/tests/test_preview.sh
 
   frontend-build:
