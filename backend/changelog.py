@@ -4,9 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.8.6"
+APP_VERSION = "0.8.7"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.8.7",
+        "date": "18 Nov 2026",
+        "title": "Dashboard Fits Phone Screens",
+        "changes": [
+            "The 'Excluded One-Off Spend' box on the Dashboard no longer pushes the page sideways on phones. Its Inspect buttons now wrap onto extra lines, so nothing is cut off at the edge.",
+        ],
+    },
     {
         "version": "0.8.6",
         "date": "31 Oct 2026",
