@@ -4,9 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-APP_VERSION = "0.8.7"
+APP_VERSION = "0.8.8"
 
 CHANGELOG: list[dict[str, Any]] = [
+    {
+        "version": "0.8.8",
+        "date": "18 Nov 2026",
+        "title": "Easier Tapping on Phones",
+        "changes": [
+            "Buttons, dropdowns, text boxes and tick boxes are now bigger on touch screens, so they are easier to hit with a thumb. Checkboxes can be ticked by tapping their label too. Table rows get slightly smaller targets so they don't become too tall. Nothing changes on a PC with a mouse.",
+        ],
+    },
     {
         "version": "0.8.7",
         "date": "18 Nov 2026",

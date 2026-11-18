@@ -66,3 +66,30 @@ body {
   outline: 2px solid #e74c3c;
   outline-offset: 2px;
 }
+
+/* Touch screens: make controls big enough to tap with a thumb.
+   Only applies where the main input is a finger (pointer: coarse), so mouse and
+   keyboard layouts on a PC are untouched. :where() keeps these rules at zero
+   specificity, so any explicit min-h-/min-w- class on a control still wins.
+   Inside tables the rows are packed tight, so controls there stop at 36px
+   instead of 44px: taller would double the height of every transaction row. */
+@media (pointer: coarse) {
+  :where(button, select, input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='hidden'])) {
+    min-height: 44px;
+  }
+
+  :where(button) {
+    min-width: 44px;
+  }
+
+  /* A checkbox is tiny, so the whole label (box + words) becomes the tap target. */
+  :where(label:has(> input[type='checkbox'], > input[type='radio'])) {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  table :where(button, select, input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='hidden'])) {
+    min-height: 36px;
+  }
+}
